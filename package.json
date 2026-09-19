@@ -2,6 +2,7 @@
   "name": "labpro",
   "version": "1.0.0",
   "description": "LabPro — offline laboratory report management system",
+  "author": "LabPro",
   "main": "dist-electron/electron/main/index.js",
   "private": true,
   "type": "commonjs",
@@ -16,7 +17,7 @@
     "generate-icon": "node scripts/generate-icon.mjs",
     "seed": "tsx src/db/seed.ts",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --publish never",
     "test": "cross-env ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs run",
     "test:watch": "cross-env ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs"
   },
