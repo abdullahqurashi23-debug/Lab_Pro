@@ -1,0 +1,15 @@
+export * from './types';
+export * as usersRepo from './users';
+export * as patientsRepo from './patients';
+export * as doctorsRepo from './doctors';
+export * as testCategoriesRepo from './testCategories';
+export * as testsRepo from './tests';
+export * as catalogRepo from './catalog';
+export * as reportsRepo from './reports';
+export * as dashboardRepo from './dashboard';
+export * as paymentsRepo from './payments';
+export * as revenueRepo from './revenue';
+export * as auditLogRepo from './auditLog';
+export * as settingsRepo from './settings';
+export * as printSettingsRepo from './printSettings';
+export * as clinicSettingsRepo from './clinicSettings';

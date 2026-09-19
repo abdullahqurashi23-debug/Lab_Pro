@@ -1,0 +1,33 @@
+name: Build Windows Installer
+
+# Builds LabPro's Windows installer on a real Windows runner — required
+# because better-sqlite3 is a native module and cannot be cross-compiled
+# for Windows from macOS or Linux. Run manually from the Actions tab, or
+# automatically whenever a version tag is pushed.
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and package the installer
+        run: npm run dist
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LabPro-Windows-Installer
+          path: dist/*.exe

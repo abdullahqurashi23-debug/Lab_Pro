@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:; img-src 'self' data: file:;" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LabPro</title>
+    <script>
+      // Applied before first paint so switching to dark mode never flashes
+      // light on launch. Kept in sync with src/lib/theme.ts's storage key.
+      (function () {
+        try {
+          if (localStorage.getItem('labpro-theme') === 'dark') {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
