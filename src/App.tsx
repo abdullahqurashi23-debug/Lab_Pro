@@ -10,6 +10,7 @@ import Patients from './pages/Patients';
 import PatientProfile from './pages/PatientProfile';
 import TestCatalog from './pages/TestCatalog';
 import Revenue from './pages/Revenue';
+import TestReport from './pages/TestReport';
 import Users from './pages/Users';
 import AuditLog from './pages/AuditLog';
 import Settings from './pages/Settings';
@@ -17,6 +18,7 @@ import PrintReport from './pages/PrintReport';
 import PrintTemplateRoute from './pages/PrintTemplateRoute';
 import AlignmentTestPage from './pages/AlignmentTestPage';
 import RevenuePrintTemplate from './pages/RevenuePrintTemplate';
+import TestReportPrintTemplate from './pages/TestReportPrintTemplate';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import Login from './pages/Login';
 import ForceChangePassword from './pages/ForceChangePassword';
@@ -118,6 +120,7 @@ const router = createHashRouter([
   // BrowserWindow (see electron/print.ts) — no Sidebar/TopBar, no auth gate.
   { path: '/print-template/alignment-test', element: <AlignmentTestPage />, errorElement: <RouteErrorBoundary /> },
   { path: '/print-template/revenue', element: <RevenuePrintTemplate />, errorElement: <RouteErrorBoundary /> },
+  { path: '/print-template/test-report', element: <TestReportPrintTemplate />, errorElement: <RouteErrorBoundary /> },
   { path: '/print-template/:id', element: <PrintTemplateRoute />, errorElement: <RouteErrorBoundary /> },
   {
     path: '/',
@@ -135,6 +138,7 @@ const router = createHashRouter([
       { path: 'patients/:id', element: <PatientProfile />, errorElement: <RouteErrorBoundary /> },
       { path: 'tests', element: <TestCatalog />, errorElement: <RouteErrorBoundary /> },
       { path: 'revenue', element: <Revenue />, errorElement: <RouteErrorBoundary /> },
+      { path: 'test-report', element: <TestReport />, errorElement: <RouteErrorBoundary /> },
       { path: 'users', element: <Users />, errorElement: <RouteErrorBoundary /> },
       { path: 'audit', element: <AuditLog />, errorElement: <RouteErrorBoundary /> },
       { path: 'settings', element: <Settings />, errorElement: <RouteErrorBoundary /> },

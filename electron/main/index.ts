@@ -17,13 +17,14 @@ import {
   dashboardRepo,
   paymentsRepo,
   revenueRepo,
+  testReportRepo,
   auditLogRepo as auditRepo,
   settingsRepo,
   clinicSettingsRepo,
   catalogRepo,
   printSettingsRepo,
 } from '../../src/db/repositories';
-import { generateReportPdf, generateAlignmentTestPage, generateRevenuePdf, printPdfBuffer } from '../print';
+import { generateReportPdf, generateAlignmentTestPage, generateRevenuePdf, generateTestReportPdf, printPdfBuffer } from '../print';
 import { buildArchivePath } from '../reportArchive';
 import type { PublicUser, Role, ReportWithDetails } from '../../src/db/repositories';
 import {
@@ -653,6 +654,34 @@ handle('revenue:exportPdf', async (_e, filters) => {
   if (result.canceled || !result.filePath) return { success: false, canceled: true };
   fs.writeFileSync(result.filePath, pdfBuffer);
   audit('EXPORT_PDF', 'revenue', null, { path: result.filePath, ...parsed });
+  return { success: true, path: result.filePath };
+});
+
+handle('testreport:period', (_e, filters) => {
+  requireRole('ADMIN', 'RECEPTION');
+  return testReportRepo.getTestReportForPeriod(db(), revenuePeriodFiltersSchema.parse(filters));
+});
+handle('testreport:print', async (_e, filters) => {
+  requireRole('ADMIN', 'RECEPTION');
+  const parsed = revenuePeriodFiltersSchema.parse(filters);
+  const pdfBuffer = await generateTestReportPdf(parsed);
+  await printPdfBuffer(pdfBuffer);
+  audit('PRINT', 'test_report', null, parsed);
+  return { success: true };
+});
+handle('testreport:exportPdf', async (_e, filters) => {
+  requireRole('ADMIN', 'RECEPTION');
+  if (!mainWindow) return { success: false, error: 'No window' };
+  const parsed = revenuePeriodFiltersSchema.parse(filters);
+  const pdfBuffer = await generateTestReportPdf(parsed);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Test Report',
+    defaultPath: `labpro-test-report-${parsed.granularity}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+  fs.writeFileSync(result.filePath, pdfBuffer);
+  audit('EXPORT_PDF', 'test_report', null, { path: result.filePath, ...parsed });
   return { success: true, path: result.filePath };
 });
 

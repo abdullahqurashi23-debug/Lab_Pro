@@ -60,6 +60,10 @@ interface PrintTemplateContentProps {
 // guessed height offset for the content that follows.
 export default function PrintTemplateContent({ report, clinic, layout, mode, showInlineHeaderFooterImages }: PrintTemplateContentProps) {
   const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '—');
+  // A draft being previewed hasn't been finalized yet, so finalized_at is
+  // still null — falling back to created_at means the date always shows
+  // something real (today's date, in practice) instead of a blank dash.
+  const reportDate = fmtDate(report.finalized_at || report.created_at);
 
   return (
     <div style={{ fontSize: `${layout.baseFontSizePt}pt` }} className="font-sans text-black">
@@ -71,31 +75,45 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
         <thead>
           <tr>
             <td className="pb-3">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span
-                  className="text-[0.72em] font-bold uppercase tracking-[0.14em]"
+              <div className="text-center mb-2">
+                <div
+                  className="font-bold text-[1.3em] tracking-[0.08em]"
                   style={{ color: ACCENT }}
                 >
-                  Laboratory Report
-                </span>
-                <div className="flex-1" style={{ height: 1, background: '#00000022' }} />
+                  LABORATORY REPORT
+                </div>
               </div>
+              {/* Same tinted-header-bar + bordered-box language as each
+                  test panel below, so the whole document reads as one
+                  consistently designed system rather than a title bolted
+                  onto a plain box. */}
               <div className="rounded-md overflow-hidden" style={{ border: '1px solid #00000030' }}>
-                <div className="grid grid-cols-3 text-[0.9em]">
+                <div className="px-3 py-1.5" style={{ background: `${ACCENT}14` }}>
+                  <div className="font-bold text-[0.85em] tracking-wide" style={{ color: ACCENT }}>
+                    PATIENT &amp; REPORT INFORMATION
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 text-[0.9em]">
                   {[
                     ['Patient', report.patient_name],
                     ['Report No', report.report_no],
-                    ['Report Date', fmtDate(report.finalized_at)],
-                    ['Age / Gender', `${report.age ?? '—'} ${report.age_unit} / ${report.gender || '—'}`],
+                    ['Report Date', reportDate],
+                    ['Age', `${report.age ?? '—'} ${report.age_unit}`],
+                    ['Gender', report.gender || '—'],
                     ['Patient ID', report.patient_code],
                     ['Referred By', report.doctor_name || 'Self'],
+                    // The explicitly-entered technician name wins — it can
+                    // differ from whoever's software account clicked
+                    // Finalize (finalized_by_name), which older reports
+                    // (from before this field existed) fall back to.
+                    ['Performed By', report.performed_by || report.finalized_by_name || '—'],
                   ].map(([label, value], i) => (
                     <div
                       key={label}
                       className="px-3 py-1.5"
                       style={{
-                        borderLeft: i % 3 === 0 ? undefined : '1px solid #00000018',
-                        borderTop: i >= 3 ? '1px solid #00000018' : undefined,
+                        borderLeft: i % 4 === 0 ? undefined : '1px solid #00000018',
+                        borderTop: i >= 4 ? '1px solid #00000018' : undefined,
                       }}
                     >
                       <div className="text-[0.72em] uppercase tracking-wide text-neutral-500 leading-tight">{label}</div>
@@ -108,10 +126,9 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                   ))}
                 </div>
                 <div
-                  className="flex items-center justify-end gap-2 px-3 py-1"
+                  className="flex items-center justify-end px-3 py-1"
                   style={{ borderTop: '1px solid #00000018' }}
                 >
-                  <span className="text-[0.6em] text-neutral-500">Scan to verify</span>
                   <Barcode value={report.report_no} />
                 </div>
               </div>
@@ -123,9 +140,16 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
           <tr>
             <td>
               {(report.tests || []).map((rt) => (
-                <div key={rt.id} className="test-block mb-4">
-                  <div className="font-bold text-[1.05em] mb-1">{rt.test_name_snapshot}</div>
-                  <div style={{ width: 32, height: 2, background: ACCENT, marginBottom: 6 }} />
+                <div key={rt.id} className="test-block mb-4 rounded-md overflow-hidden" style={{ border: '1px solid #00000022' }}>
+                  {/* A tinted section bar rather than plain bold text gives
+                      each test panel real visual weight/presence — the
+                      "big lab report" feel is mostly about clear, boxed
+                      structure, not about using more space. */}
+                  <div className="px-3 py-1.5" style={{ background: `${ACCENT}14` }}>
+                    <div className="font-bold text-[1em] tracking-wide" style={{ color: ACCENT }}>
+                      {rt.test_name_snapshot.toUpperCase()}
+                    </div>
+                  </div>
                   {/* Fixed column widths (via colgroup + table-fixed) are
                       the only way to guarantee Result/Unit/Reference Range
                       line up at the same x-position across every test's
@@ -136,26 +160,28 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                       single short row (e.g. a qualitative result). */}
                   <table className="w-full text-[0.95em] border-collapse table-fixed">
                     <colgroup>
-                      <col style={{ width: '28%' }} />
+                      <col style={{ width: '26%' }} />
                       <col style={{ width: '20%' }} />
                       <col style={{ width: '15%' }} />
-                      <col style={{ width: '37%' }} />
+                      <col style={{ width: '39%' }} />
                     </colgroup>
                     <thead>
-                      <tr className="text-left border-b border-black/40">
-                        <th className="py-1 pr-2 font-medium">Parameter</th>
-                        <th className="py-1 pr-2 font-medium">Result</th>
-                        <th className="py-1 pr-2 font-medium">Unit</th>
-                        <th className="py-1 font-medium">Reference Range</th>
+                      <tr className="text-left" style={{ borderBottom: '1px solid #00000030' }}>
+                        <th className="py-1.5 pl-3 pr-6 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">Test</th>
+                        <th className="py-1.5 px-2 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">Result</th>
+                        <th className="py-1.5 px-2 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">Unit</th>
+                        <th className="py-1.5 pl-2 pr-3 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">
+                          Reference Range
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(rt.results || []).map((r) => (
-                        <tr key={r.id} className="align-top">
-                          <td className="py-1 pr-2">{r.parameter_name_snapshot}</td>
-                          <td className="py-1 pr-2">{r.value || '—'}</td>
-                          <td className="py-1 pr-2 text-neutral-500">{r.unit_snapshot || '—'}</td>
-                          <td className="py-1 text-neutral-500">{r.ref_range_snapshot || '—'}</td>
+                      {(rt.results || []).map((r, i) => (
+                        <tr key={r.id} className="align-top" style={{ background: i % 2 === 1 ? '#00000006' : undefined }}>
+                          <td className="py-1.5 pl-3 pr-6 font-medium">{r.parameter_name_snapshot}</td>
+                          <td className="py-1.5 px-2 font-semibold">{r.value || '—'}</td>
+                          <td className="py-1.5 px-2 text-neutral-500">{r.unit_snapshot || '—'}</td>
+                          <td className="py-1.5 pl-2 pr-3 text-neutral-500">{r.ref_range_snapshot || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -164,14 +190,17 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
               ))}
 
               {report.notes && (
-                <div className="mt-4 mb-6 text-[0.95em]">
-                  <div className="font-semibold mb-1">Report Notes</div>
-                  <div className="whitespace-pre-wrap text-neutral-500">{report.notes}</div>
+                <div className="mt-4 mb-6 text-[0.95em] rounded-md p-3" style={{ border: '1px solid #00000022' }}>
+                  <div className="font-bold text-[0.85em] uppercase tracking-wide mb-1" style={{ color: ACCENT }}>
+                    Report Notes
+                  </div>
+                  <div className="whitespace-pre-wrap text-neutral-700">{report.notes}</div>
                 </div>
               )}
 
-              <div className="flex justify-end mt-10">
-                <div className="text-center text-[0.9em]">
+              <div style={{ height: 1, background: '#00000022', marginTop: 28 }} />
+              <div className="flex items-end justify-end mt-3">
+                <div className="text-center text-[0.9em] shrink-0">
                   {clinic.signature_image_path && (
                     <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
                   )}

@@ -214,6 +214,7 @@ export default function PatientProfile() {
             <TableHeader>
               <TableRow>
                 <TableHead>Report #</TableHead>
+                <TableHead>Test(s)</TableHead>
                 <TableHead>Doctor</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Total</TableHead>
@@ -225,6 +226,9 @@ export default function PatientProfile() {
               {reports.map((r) => (
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => openReport(r)}>
                   <TableCell className="font-medium">{r.report_no}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {r.test_names ? r.test_names.split(',').join(', ') : '—'}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{r.doctor_name || '—'}</TableCell>
                   <TableCell className="text-muted-foreground">{r.created_at.slice(0, 10)}</TableCell>
                   <TableCell>{fmt(r.total)}</TableCell>
@@ -240,7 +244,7 @@ export default function PatientProfile() {
               ))}
               {reports.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                     No reports yet for this patient.
                   </TableCell>
                 </TableRow>

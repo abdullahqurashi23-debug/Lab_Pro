@@ -192,6 +192,7 @@ export const reportInputSchema = z.object({
   paid: z.number().nonnegative().optional().default(0),
   payment_method: z.string().trim().max(50).optional().default(''),
   notes: z.string().trim().max(2000).optional().default(''),
+  performed_by: z.string().trim().max(200).optional().default(''),
   tests: z.array(reportTestInputSchema).min(1, 'At least one test is required'),
 });
 

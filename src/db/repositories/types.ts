@@ -124,6 +124,7 @@ export interface Report {
   pdf_sha256: string;
   amends_report_id: number | null;
   notes: string;
+  performed_by: string;
   created_at: string;
 }
 
@@ -179,6 +180,10 @@ export interface ReportListRow extends Report {
   patient_code: string;
   patient_phone: string;
   doctor_name: string | null;
+  // Only populated by listReports() (used by the Patient Profile report
+  // list) — searchReports()'s own query doesn't join report_tests, so this
+  // is genuinely absent (not just empty) on rows from that path.
+  test_names?: string;
 }
 
 export interface ReportListFilters {
@@ -228,6 +233,7 @@ export interface NewReportInput {
   paid?: number;
   payment_method?: string;
   notes?: string;
+  performed_by?: string;
   tests: NewReportTestInput[];
 }
 
@@ -326,4 +332,28 @@ export interface RevenuePeriodReport {
   byDoctor: RevenueBreakdownRow[];
   byCategory: RevenueBreakdownRow[];
   byPaymentMethod: RevenueBreakdownRow[];
+}
+
+export interface TestReportFilters {
+  granularity: RevenueGranularity;
+  from?: string;
+  to?: string;
+}
+
+export interface TestReportRow {
+  report_id: number;
+  report_no: string;
+  patient_name: string;
+  test_names: string;
+  doctor_name: string | null;
+  subtotal: number;
+  discount: number;
+  total: number;
+}
+
+export interface TestReportResult {
+  from: string;
+  to: string;
+  rows: TestReportRow[];
+  totals: { subtotal: number; discount: number; total: number };
 }

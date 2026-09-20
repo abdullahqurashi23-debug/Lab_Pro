@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -22,6 +22,7 @@ import {
 export default function PrintReport() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [report, setReport] = useState<ReportWithDetails | null>(null);
   const [clinic, setClinic] = useState<ClinicSettings | null>(null);
@@ -147,9 +148,18 @@ export default function PrintReport() {
   return (
     <div className="min-h-screen bg-secondary/30">
       <div className="no-print sticky top-0 bg-background border-b border-border px-8 py-4 flex items-center justify-between flex-wrap gap-3">
-        <Link to="/reports" className="text-sm text-primary hover:underline">
-          &larr; Back to Reports
-        </Link>
+        {/* Goes back to wherever the user actually came from — Reports
+            History for a finalized report opened from that list, or the
+            New Report edit screen when reached via "Preview" on a draft.
+            A fixed destination here previously always sent you to the
+            Reports History list even when you'd come from editing a
+            draft, dropping you out of the report you were working on. */}
+        <button
+          onClick={() => navigate(-1)}
+          className="text-sm text-primary hover:underline"
+        >
+          &larr; Back
+        </button>
         <div className="flex items-center gap-3">
           {isDraft ? (
             <Badge variant="warning">Draft — will be locked on print</Badge>

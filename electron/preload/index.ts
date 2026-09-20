@@ -76,6 +76,11 @@ contextBridge.exposeInMainWorld('api', {
     exportExcel: (filters: unknown) => ipcRenderer.invoke('revenue:exportExcel', filters),
     exportPdf: (filters: unknown) => ipcRenderer.invoke('revenue:exportPdf', filters),
   },
+  testReport: {
+    period: (filters: unknown) => ipcRenderer.invoke('testreport:period', filters),
+    print: (filters: unknown) => ipcRenderer.invoke('testreport:print', filters),
+    exportPdf: (filters: unknown) => ipcRenderer.invoke('testreport:exportPdf', filters),
+  },
   payments: {
     record: (reportId: number, payload: unknown) => ipcRenderer.invoke('payments:record', reportId, payload),
   },

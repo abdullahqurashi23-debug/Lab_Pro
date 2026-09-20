@@ -21,6 +21,8 @@ import type {
   DashboardStats,
   RevenuePeriodFilters,
   RevenuePeriodReport,
+  TestReportFilters,
+  TestReportResult,
   OutstandingBalanceRow,
   Payment,
   PrintLayout,
@@ -180,6 +182,11 @@ export interface LabProApi {
     outstandingBalances: () => Promise<OutstandingBalanceRow[]>;
     exportExcel: (filters: RevenuePeriodFilters) => Promise<FileOpResult>;
     exportPdf: (filters: RevenuePeriodFilters) => Promise<FileOpResult>;
+  };
+  testReport: {
+    period: (filters: TestReportFilters) => Promise<TestReportResult>;
+    print: (filters: TestReportFilters) => Promise<{ success: boolean }>;
+    exportPdf: (filters: TestReportFilters) => Promise<FileOpResult>;
   };
   payments: {
     record: (reportId: number, input: NewPaymentInput) => Promise<Payment>;

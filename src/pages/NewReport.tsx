@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useBlocker } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Search, Save, Eye, PrinterCheck, Loader2, Check } from 'lucide-react';
@@ -50,9 +50,25 @@ export default function NewReport() {
   const [selectedTests, setSelectedTests] = useState<SelectedTest[]>([]);
   const [billing, setBilling] = useState<BillingDraft>(blankBillingDraft());
   const [notes, setNotes] = useState('');
+  const [performedBy, setPerformedBy] = useState('');
   const [reportId, setReportId] = useState<number | null>(null);
   const [status, setStatus] = useState<'DRAFT' | 'FINALIZED' | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirtyState] = useState(false);
+  // useBlocker's check function is called the instant navigate() runs —
+  // which, inside handlePreview/handleFinalizeClick, happens immediately
+  // after save() calls setDirty(false) in the same async continuation,
+  // with no guarantee React has re-rendered (and updated the blocker's
+  // captured closure) in between. That gap is exactly why the "Leave
+  // without saving?" dialog could pop up right after a save that just
+  // succeeded — a real, if inconsistent-looking, race, not a one-off
+  // fluke. A ref sidesteps it entirely: refs mutate synchronously, so
+  // dirtyRef.current is always correct the instant it's read, regardless
+  // of whether a re-render has happened yet.
+  const dirtyRef = useRef(false);
+  const setDirty = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirtyState(value);
+  }, []);
   const [saving, setSaving] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -127,6 +143,7 @@ export default function NewReport() {
           paymentMethod: report.payment_method || 'Cash',
         });
         setNotes(report.notes || '');
+        setPerformedBy(report.performed_by || '');
         setReportId(report.id);
         setStatus(report.status);
       } catch (err) {
@@ -154,6 +171,7 @@ export default function NewReport() {
   const setDoctorIdDirty = markDirty(setDoctorId);
   const setBillingDirty = markDirty(setBilling);
   const setNotesDirty = markDirty(setNotes);
+  const setPerformedByDirty = markDirty(setPerformedBy);
 
   const addTest = (test: TestWithParameters) => {
     if (selectedTests.some((st) => st.test.id === test.id)) return;
@@ -206,6 +224,7 @@ export default function NewReport() {
       paid: Number(billing.paid) || 0,
       payment_method: billing.paymentMethod,
       notes,
+      performed_by: performedBy,
       tests: selectedTests.map((st) => ({
         test_id: st.test.id,
         results: st.test.parameters.map((p) => ({
@@ -216,7 +235,7 @@ export default function NewReport() {
         })),
       })),
     };
-  }, [patient, doctorId, billing, notes, selectedTests, subtotal]);
+  }, [patient, doctorId, billing, notes, performedBy, selectedTests, subtotal]);
 
   const save = useCallback(
     async (silent: boolean): Promise<{ id: number; status: 'DRAFT' | 'FINALIZED' } | null> => {
@@ -240,7 +259,7 @@ export default function NewReport() {
         if (!silent) setSaving(false);
       }
     },
-    [canSave, buildPayload, reportId]
+    [canSave, buildPayload, reportId, setDirty]
   );
 
   // Auto-save every 5 seconds while there's something worth saving.
@@ -265,7 +284,13 @@ export default function NewReport() {
   }, [dirty]);
 
   // Warn before navigating to another page in-app with unsaved changes.
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname);
+  // Reads the ref (see dirtyRef above), not the `dirty` state variable
+  // directly — this check fires synchronously the moment navigate() is
+  // called, which can be before React has committed a just-completed
+  // save's setDirty(false).
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => dirtyRef.current && currentLocation.pathname !== nextLocation.pathname
+  );
 
   const handleSaveDraft = async () => {
     const result = await save(false);
@@ -388,6 +413,8 @@ export default function NewReport() {
         onPatientChange={setPatientDirty}
         doctorId={doctorId}
         onDoctorIdChange={setDoctorIdDirty}
+        performedBy={performedBy}
+        onPerformedByChange={setPerformedByDirty}
         disabled={isReadOnly}
       />
 

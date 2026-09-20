@@ -9,6 +9,7 @@ export * as reportsRepo from './reports';
 export * as dashboardRepo from './dashboard';
 export * as paymentsRepo from './payments';
 export * as revenueRepo from './revenue';
+export * as testReportRepo from './testReport';
 export * as auditLogRepo from './auditLog';
 export * as settingsRepo from './settings';
 export * as printSettingsRepo from './printSettings';

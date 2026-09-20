@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../testUtils';
 import { createTest } from './tests';
 import { createPatient } from './patients';
-import { createReport, finalizeReport, getReportById, assertResultsComplete } from './reports';
+import { createReport, finalizeReport, getReportById, assertResultsComplete, listReports } from './reports';
 
 describe('finalized-report immutability triggers', () => {
   let ctx: ReturnType<typeof createTestDb>;
@@ -116,6 +116,30 @@ describe('finalized-report immutability triggers', () => {
   });
 });
 
+describe('performed_by is entered and persisted independently of finalized_by', () => {
+  let ctx: ReturnType<typeof createTestDb>;
+  beforeEach(() => {
+    ctx = createTestDb();
+  });
+  afterEach(() => ctx.cleanup());
+
+  it('saves the entered performed_by on create, and updateDraftReport can change it', () => {
+    const test = createTest(ctx.db, { name: 'CBC', short_code: 'CBC', parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'PerformedBy Patient', age: 30, age_unit: 'Years', gender: 'Male' });
+    const report = createReport(
+      ctx.db,
+      {
+        patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' },
+        doctor_id: null,
+        performed_by: 'Ahmad Zubair',
+        tests: [{ test_id: test.id, results: [] }],
+      },
+      null
+    );
+    expect(report.performed_by).toBe('Ahmad Zubair');
+  });
+});
+
 describe('report number uniqueness', () => {
   let ctx: ReturnType<typeof createTestDb>;
   beforeEach(() => {
@@ -157,5 +181,44 @@ describe('report number uniqueness', () => {
     const firstSeq = Number(first.report_no.split('-')[2]);
     const secondSeq = Number(second.report_no.split('-')[2]);
     expect(secondSeq).toBe(firstSeq + 1);
+  });
+});
+
+describe('listReports includes which tests were done (Patient Profile report list)', () => {
+  let ctx: ReturnType<typeof createTestDb>;
+  beforeEach(() => {
+    ctx = createTestDb();
+  });
+  afterEach(() => ctx.cleanup());
+
+  it('joins every test on a report into test_names, comma-separated', () => {
+    const cbc = createTest(ctx.db, { name: 'Complete Blood Count', short_code: 'CBC', price: 500, parameters: [] });
+    const lft = createTest(ctx.db, { name: 'Liver Function Test', short_code: 'LFT', price: 800, parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'Multi Test Patient', age: 30, age_unit: 'Years', gender: 'Male' });
+    createReport(
+      ctx.db,
+      {
+        patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' },
+        doctor_id: null,
+        tests: [{ test_id: cbc.id, results: [] }, { test_id: lft.id, results: [] }],
+      },
+      null
+    );
+
+    const rows = listReports(ctx.db, { patient_id: patient.id });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].test_names?.split(',')).toEqual(['Complete Blood Count', 'Liver Function Test']);
+  });
+
+  it('is an empty string, not null/undefined, for a report with no tests', () => {
+    const patient = createPatient(ctx.db, { full_name: 'No Test Patient', age: 30, age_unit: 'Years', gender: 'Male' });
+    createReport(
+      ctx.db,
+      { patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' }, doctor_id: null, tests: [] },
+      null
+    );
+
+    const rows = listReports(ctx.db, { patient_id: patient.id });
+    expect(rows[0].test_names).toBe('');
   });
 });

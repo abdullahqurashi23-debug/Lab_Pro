@@ -56,7 +56,7 @@ function getAnchors(db: Database.Database): PeriodAnchors {
     .get() as PeriodAnchors;
 }
 
-interface ResolvedPeriod {
+export interface ResolvedPeriod {
   from: string;
   to: string;
   prevFrom: string;
@@ -66,7 +66,12 @@ interface ResolvedPeriod {
   bucketBy: 'day' | 'week' | 'month' | 'year';
 }
 
-function resolvePeriod(db: Database.Database, filters: RevenuePeriodFilters): ResolvedPeriod {
+// Exported so other period-based reports (e.g. the daily/weekly/monthly
+// Test Report) resolve "today"/"this week"/"this month" identically to
+// Revenue — a single source of truth for what those words mean, all
+// computed in SQLite's own UTC `date('now')` rather than JS Date (see the
+// getAnchors comment above for why that matters).
+export function resolvePeriod(db: Database.Database, filters: RevenuePeriodFilters): ResolvedPeriod {
   const a = getAnchors(db);
   const g: RevenueGranularity = filters.granularity;
 

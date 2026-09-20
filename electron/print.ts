@@ -173,6 +173,14 @@ export async function generateRevenuePdf(filters: { granularity: string; from?: 
   return addPageNumbers(raw, REVENUE_PDF_LAYOUT);
 }
 
+export async function generateTestReportPdf(filters: { granularity: string; from?: string; to?: string }): Promise<Buffer> {
+  const params = new URLSearchParams({ granularity: filters.granularity });
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  const raw = await renderToPdfBuffer(`/print-template/test-report?${params.toString()}`, REVENUE_PDF_LAYOUT);
+  return addPageNumbers(raw, REVENUE_PDF_LAYOUT);
+}
+
 export async function printPdfBuffer(pdfBuffer: Buffer): Promise<void> {
   const tempPath = path.join(os.tmpdir(), `labpro-print-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
   fs.writeFileSync(tempPath, pdfBuffer);

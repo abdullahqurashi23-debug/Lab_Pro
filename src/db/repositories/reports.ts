@@ -90,10 +90,20 @@ export function createReport(db: Database.Database, input: NewReportInput, creat
 
     const reportInfo = db
       .prepare(
-        `INSERT INTO reports (report_no, patient_id, doctor_id, discount, paid, payment_method, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO reports (report_no, patient_id, doctor_id, discount, paid, payment_method, notes, performed_by, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(reportNo, patient.id, input.doctor_id || null, discount, paid, input.payment_method || '', input.notes || '', createdByUserId);
+      .run(
+        reportNo,
+        patient.id,
+        input.doctor_id || null,
+        discount,
+        paid,
+        input.payment_method || '',
+        input.notes || '',
+        input.performed_by || '',
+        createdByUserId
+      );
     const reportId = reportInfo.lastInsertRowid as number;
 
     const subtotal = writeReportTests(db, reportId, input, isChild, patient.gender);
@@ -148,8 +158,19 @@ export function updateDraftReport(db: Database.Database, reportId: number, input
     const balance = Math.max(0, total - paid);
 
     db.prepare(
-      'UPDATE reports SET doctor_id = ?, subtotal = ?, discount = ?, total = ?, paid = ?, balance = ?, payment_method = ?, notes = ? WHERE id = ?'
-    ).run(input.doctor_id || null, subtotal, discount, total, paid, balance, input.payment_method || '', input.notes || '', reportId);
+      'UPDATE reports SET doctor_id = ?, subtotal = ?, discount = ?, total = ?, paid = ?, balance = ?, payment_method = ?, notes = ?, performed_by = ? WHERE id = ?'
+    ).run(
+      input.doctor_id || null,
+      subtotal,
+      discount,
+      total,
+      paid,
+      balance,
+      input.payment_method || '',
+      input.notes || '',
+      input.performed_by || '',
+      reportId
+    );
   });
   txn();
 
@@ -312,7 +333,8 @@ export function getReportById(db: Database.Database, id: number): ReportWithDeta
 export function listReports(db: Database.Database, filters: ReportListFilters = {}): ReportListRow[] {
   const { from, to, status, patient_id } = filters;
   let query = `
-    SELECT reports.*, patients.full_name as patient_name, patients.patient_code, patients.phone as patient_phone, doctors.name as doctor_name
+    SELECT reports.*, patients.full_name as patient_name, patients.patient_code, patients.phone as patient_phone, doctors.name as doctor_name,
+      COALESCE((SELECT GROUP_CONCAT(rt.test_name_snapshot) FROM report_tests rt WHERE rt.report_id = reports.id), '') as test_names
     FROM reports
     JOIN patients ON patients.id = reports.patient_id
     LEFT JOIN doctors ON doctors.id = reports.doctor_id

@@ -46,10 +46,24 @@ interface PatientPanelProps {
   onPatientChange: (p: PatientDraft) => void;
   doctorId: string;
   onDoctorIdChange: (id: string) => void;
+  // Who actually ran the test — distinct from the Referring Doctor (who
+  // ordered it) and from whoever's account finalizes the report in the
+  // software. Free text, not its own managed list, since it's printed as
+  // a label on the report rather than referenced/joined elsewhere.
+  performedBy: string;
+  onPerformedByChange: (name: string) => void;
   disabled?: boolean;
 }
 
-export default function PatientPanel({ patient, onPatientChange, doctorId, onDoctorIdChange, disabled }: PatientPanelProps) {
+export default function PatientPanel({
+  patient,
+  onPatientChange,
+  doctorId,
+  onDoctorIdChange,
+  performedBy,
+  onPerformedByChange,
+  disabled,
+}: PatientPanelProps) {
   // Only two real modes now: searching for/starting a patient, or editing
   // one (whether it's an existing patient pulled up from search/a draft, or
   // a brand-new one being typed in for the first time) — both show the
@@ -325,6 +339,15 @@ export default function PatientPanel({ patient, onPatientChange, doctorId, onDoc
               </Button>
             </div>
           )}
+          <div className="col-span-2 space-y-1.5">
+            <Label>Performed By</Label>
+            <Input
+              placeholder="e.g. lab technician's name"
+              value={performedBy}
+              onChange={(e) => onPerformedByChange(e.target.value)}
+              disabled={disabled}
+            />
+          </div>
         </div>
       </CardContent>
 

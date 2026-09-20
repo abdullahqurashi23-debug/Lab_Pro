@@ -13,6 +13,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   History,
+  Printer,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -35,6 +36,7 @@ const links: NavLinkDef[] = [
   { to: '/patients', label: 'Patients', icon: UsersIcon, end: false, roles: ['ADMIN', 'RECEPTION'] },
   { to: '/tests', label: 'Test Catalog', icon: ClipboardList, end: false, roles: ['ADMIN'] },
   { to: '/revenue', label: 'Revenue', icon: BadgeDollarSign, end: false, roles: ['ADMIN', 'RECEPTION'] },
+  { to: '/test-report', label: 'Test Report', icon: Printer, end: false, roles: ['ADMIN', 'RECEPTION'] },
   { to: '/users', label: 'Users', icon: UserCog, end: false, roles: ['ADMIN'] },
   { to: '/audit', label: 'Audit Log', icon: History, end: false, roles: ['ADMIN'] },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
