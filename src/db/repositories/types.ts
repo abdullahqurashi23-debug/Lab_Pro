@@ -344,7 +344,7 @@ export interface TestReportRow {
   report_id: number;
   report_no: string;
   patient_name: string;
-  test_names: string;
+  test_codes: string;
   doctor_name: string | null;
   subtotal: number;
   discount: number;

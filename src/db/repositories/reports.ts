@@ -55,13 +55,13 @@ function writeReportTests(db: Database.Database, reportId: number, input: NewRep
   }
 
   const insertReportTest = db.prepare(
-    'INSERT INTO report_tests (report_id, test_id, test_name_snapshot, price_snapshot) VALUES (?, ?, ?, ?)'
+    'INSERT INTO report_tests (report_id, test_id, test_name_snapshot, short_code_snapshot, price_snapshot) VALUES (?, ?, ?, ?, ?)'
   );
   let subtotal = 0;
   for (const item of input.tests) {
     const test = getTestById(db, item.test_id);
     if (!test) throw new Error(`Test #${item.test_id} not found.`);
-    const info = insertReportTest.run(reportId, test.id, test.name, test.price);
+    const info = insertReportTest.run(reportId, test.id, test.name, test.short_code, test.price);
     const reportTestId = info.lastInsertRowid as number;
     subtotal += test.price;
     const results = computeParameterResults(test.parameters, item.results, isChild, gender);

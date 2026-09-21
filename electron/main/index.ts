@@ -641,11 +641,21 @@ handle('revenue:exportExcel', async (_e, filters) => {
   audit('EXPORT_EXCEL', 'revenue', null, { path: result.filePath, ...parsed });
   return { success: true, path: result.filePath };
 });
+handle('revenue:print', async (_e, filters) => {
+  requireRole('ADMIN', 'RECEPTION');
+  const parsed = revenuePeriodFiltersSchema.parse(filters);
+  const layout = printSettingsRepo.getPrintLayout(db());
+  const pdfBuffer = await generateRevenuePdf(parsed, layout);
+  await printPdfBuffer(pdfBuffer);
+  audit('PRINT', 'revenue', null, parsed);
+  return { success: true };
+});
 handle('revenue:exportPdf', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
   if (!mainWindow) return { success: false, error: 'No window' };
   const parsed = revenuePeriodFiltersSchema.parse(filters);
-  const pdfBuffer = await generateRevenuePdf(parsed);
+  const layout = printSettingsRepo.getPrintLayout(db());
+  const pdfBuffer = await generateRevenuePdf(parsed, layout);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Export Revenue Report',
     defaultPath: `labpro-revenue-${parsed.granularity}.pdf`,
@@ -664,7 +674,8 @@ handle('testreport:period', (_e, filters) => {
 handle('testreport:print', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
   const parsed = revenuePeriodFiltersSchema.parse(filters);
-  const pdfBuffer = await generateTestReportPdf(parsed);
+  const layout = printSettingsRepo.getPrintLayout(db());
+  const pdfBuffer = await generateTestReportPdf(parsed, layout);
   await printPdfBuffer(pdfBuffer);
   audit('PRINT', 'test_report', null, parsed);
   return { success: true };
@@ -673,7 +684,8 @@ handle('testreport:exportPdf', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
   if (!mainWindow) return { success: false, error: 'No window' };
   const parsed = revenuePeriodFiltersSchema.parse(filters);
-  const pdfBuffer = await generateTestReportPdf(parsed);
+  const layout = printSettingsRepo.getPrintLayout(db());
+  const pdfBuffer = await generateTestReportPdf(parsed, layout);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Save Test Report',
     defaultPath: `labpro-test-report-${parsed.granularity}.pdf`,

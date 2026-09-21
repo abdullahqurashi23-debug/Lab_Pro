@@ -152,33 +152,30 @@ export async function generateAlignmentTestPage(layout: PrintLayout): Promise<Bu
   return renderToPdfBuffer('/print-template/alignment-test', layout);
 }
 
-// A plain internal business report — deliberately NOT run through the
-// user's configured PrintLayout (that's specifically for matching a lab's
-// pre-printed patient-report letterhead, which has nothing to do with an
-// analytics export), just a sensible fixed A4 margin.
-const REVENUE_PDF_LAYOUT: PrintLayout = {
-  topMarginMm: 15,
-  bottomMarginMm: 15,
-  leftMarginMm: 15,
-  rightMarginMm: 15,
-  paperSize: 'A4',
-  baseFontSizePt: 10,
-};
-
-export async function generateRevenuePdf(filters: { granularity: string; from?: string; to?: string }): Promise<Buffer> {
+// These business reports print onto the same paper as patient reports (a
+// lab's pre-printed letterhead), so they use that same configured
+// PrintLayout for margins — the blank margin bands are what let the
+// physical header/footer show through un-overlapped.
+export async function generateRevenuePdf(
+  filters: { granularity: string; from?: string; to?: string },
+  layout: PrintLayout
+): Promise<Buffer> {
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
-  const raw = await renderToPdfBuffer(`/print-template/revenue?${params.toString()}`, REVENUE_PDF_LAYOUT);
-  return addPageNumbers(raw, REVENUE_PDF_LAYOUT);
+  const raw = await renderToPdfBuffer(`/print-template/revenue?${params.toString()}`, layout);
+  return addPageNumbers(raw, layout);
 }
 
-export async function generateTestReportPdf(filters: { granularity: string; from?: string; to?: string }): Promise<Buffer> {
+export async function generateTestReportPdf(
+  filters: { granularity: string; from?: string; to?: string },
+  layout: PrintLayout
+): Promise<Buffer> {
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
-  const raw = await renderToPdfBuffer(`/print-template/test-report?${params.toString()}`, REVENUE_PDF_LAYOUT);
-  return addPageNumbers(raw, REVENUE_PDF_LAYOUT);
+  const raw = await renderToPdfBuffer(`/print-template/test-report?${params.toString()}`, layout);
+  return addPageNumbers(raw, layout);
 }
 
 export async function printPdfBuffer(pdfBuffer: Buffer): Promise<void> {

@@ -12,7 +12,7 @@ import {
   BarChart,
   Cell,
 } from 'recharts';
-import { FileSpreadsheet, FileText, TrendingUp, TrendingDown } from 'lucide-react';
+import { FileSpreadsheet, FileText, Printer, TrendingUp, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
@@ -107,7 +107,7 @@ export default function Revenue() {
   const [loading, setLoading] = useState(true);
   const [outstanding, setOutstanding] = useState<OutstandingBalanceRow[]>([]);
   const [paymentTarget, setPaymentTarget] = useState<OutstandingBalanceRow | null>(null);
-  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | 'print' | null>(null);
 
   const filters = { granularity, from: granularity === 'custom' ? customFrom : undefined, to: granularity === 'custom' ? customTo : undefined };
 
@@ -161,6 +161,18 @@ export default function Revenue() {
     }
   };
 
+  const printReport = async () => {
+    setExporting('print');
+    try {
+      const result = await api.revenue.print(filters);
+      if (result.success) toast.success('Sent to printer.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to print.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const trendData = (report?.trend || []).map((t) => ({ ...t, label: formatBucketLabel(t.bucket, granularity) }));
 
   return (
@@ -171,6 +183,10 @@ export default function Revenue() {
           <p className="text-muted-foreground text-sm mt-1">Only finalized reports count toward revenue.</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={printReport} disabled={exporting !== null || !report}>
+            <Printer className="h-4 w-4" />
+            {exporting === 'print' ? 'Printing…' : 'Print'}
+          </Button>
           <Button variant="outline" onClick={exportExcel} disabled={exporting !== null || !report}>
             <FileSpreadsheet className="h-4 w-4" />
             {exporting === 'excel' ? 'Exporting…' : 'Export Excel'}

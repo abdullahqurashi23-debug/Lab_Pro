@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
-import type { RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
+import type { ClinicSettings, RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
 
 // Rendered only inside a hidden BrowserWindow for the Revenue page's
 // "Export PDF" button (see electron/print.ts's generateRevenuePdf). Colors
@@ -53,12 +53,17 @@ export default function RevenuePrintTemplate() {
 
   const [report, setReport] = useState<RevenuePeriodReport | null>(null);
   const [outstanding, setOutstanding] = useState<OutstandingBalanceRow[]>([]);
+  const [clinic, setClinic] = useState<ClinicSettings | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [r, o] = await Promise.all([api.revenue.period({ granularity, from, to }), api.revenue.outstandingBalances()]);
+        const [r, o, c] = await Promise.all([
+          api.revenue.period({ granularity, from, to }),
+          api.revenue.outstandingBalances(),
+          api.settings.get(),
+        ]);
         if (cancelled) return;
         if (!r) {
           document.body.setAttribute('data-print-ready', 'error');
@@ -66,6 +71,7 @@ export default function RevenuePrintTemplate() {
         }
         setReport(r);
         setOutstanding(o ?? []);
+        setClinic(c);
       } catch {
         if (!cancelled) document.body.setAttribute('data-print-ready', 'error');
       }
@@ -81,14 +87,14 @@ export default function RevenuePrintTemplate() {
     return () => cancelAnimationFrame(raf);
   }, [report]);
 
-  if (!report) return null;
+  if (!report || !clinic) return null;
 
   return (
     <div className="bg-white text-black font-sans text-[10pt] p-2">
       <div className="text-center mb-6">
-        <div className="text-lg font-bold">LabPro Revenue Report</div>
+        <div className="text-lg font-bold">{clinic.clinic_name}</div>
         <div className="text-neutral-500 text-[0.9em] mt-1">
-          {report.from === report.to ? report.from : `${report.from} to ${report.to}`} ({granularity})
+          Revenue Report — {report.from === report.to ? report.from : `${report.from} to ${report.to}`} ({granularity})
         </div>
       </div>
 

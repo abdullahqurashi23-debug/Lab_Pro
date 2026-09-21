@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
   revenue: {
     period: (filters: unknown) => ipcRenderer.invoke('revenue:period', filters),
     outstandingBalances: () => ipcRenderer.invoke('revenue:outstandingBalances'),
+    print: (filters: unknown) => ipcRenderer.invoke('revenue:print', filters),
     exportExcel: (filters: unknown) => ipcRenderer.invoke('revenue:exportExcel', filters),
     exportPdf: (filters: unknown) => ipcRenderer.invoke('revenue:exportPdf', filters),
   },

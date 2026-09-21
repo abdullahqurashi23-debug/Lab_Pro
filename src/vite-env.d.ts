@@ -180,6 +180,7 @@ export interface LabProApi {
   revenue: {
     period: (filters: RevenuePeriodFilters) => Promise<RevenuePeriodReport>;
     outstandingBalances: () => Promise<OutstandingBalanceRow[]>;
+    print: (filters: RevenuePeriodFilters) => Promise<{ success: boolean }>;
     exportExcel: (filters: RevenuePeriodFilters) => Promise<FileOpResult>;
     exportPdf: (filters: RevenuePeriodFilters) => Promise<FileOpResult>;
   };

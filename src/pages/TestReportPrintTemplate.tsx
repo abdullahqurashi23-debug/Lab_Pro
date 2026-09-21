@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
-import type { RevenueGranularity, TestReportResult } from '@/lib/types';
+import type { ClinicSettings, RevenueGranularity, TestReportResult } from '@/lib/types';
 
 // Rendered only inside a hidden BrowserWindow for the Test Report page's
 // "Print" and "Save as PDF" actions (see electron/print.ts's
@@ -29,18 +29,20 @@ export default function TestReportPrintTemplate() {
   const to = searchParams.get('to') || undefined;
 
   const [report, setReport] = useState<TestReportResult | null>(null);
+  const [clinic, setClinic] = useState<ClinicSettings | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const r = await api.testReport.period({ granularity, from, to });
+        const [r, c] = await Promise.all([api.testReport.period({ granularity, from, to }), api.settings.get()]);
         if (cancelled) return;
         if (!r) {
           document.body.setAttribute('data-print-ready', 'error');
           return;
         }
         setReport(r);
+        setClinic(c);
       } catch {
         if (!cancelled) document.body.setAttribute('data-print-ready', 'error');
       }
@@ -56,14 +58,14 @@ export default function TestReportPrintTemplate() {
     return () => cancelAnimationFrame(raf);
   }, [report]);
 
-  if (!report) return null;
+  if (!report || !clinic) return null;
 
   return (
     <div className="bg-white text-black font-sans text-[10pt] p-2">
       <div className="text-center mb-6">
-        <div className="text-lg font-bold">LabPro Test Report</div>
+        <div className="text-lg font-bold">{clinic.clinic_name}</div>
         <div className="text-neutral-500 text-[0.9em] mt-1">
-          {report.from === report.to ? report.from : `${report.from} to ${report.to}`} ({GRANULARITY_LABEL[granularity]})
+          Test Report — {report.from === report.to ? report.from : `${report.from} to ${report.to}`} ({GRANULARITY_LABEL[granularity]})
         </div>
       </div>
 
@@ -90,7 +92,7 @@ export default function TestReportPrintTemplate() {
           {report.rows.map((r) => (
             <tr key={r.report_id} className="border-b border-black/10 align-top">
               <td className="py-1 pr-2">{r.patient_name}</td>
-              <td className="py-1 pr-2">{r.test_names.split(',').join(', ')}</td>
+              <td className="py-1 pr-2">{r.test_codes.split(',').join(', ')}</td>
               <td className="py-1 pr-2 text-neutral-500">{r.doctor_name || 'Self'}</td>
               <td className="py-1 pr-2 text-right whitespace-nowrap">{fmt(r.subtotal)}</td>
               <td className="py-1 pr-2 text-right whitespace-nowrap">{r.discount ? `-${fmt(r.discount)}` : '—'}</td>

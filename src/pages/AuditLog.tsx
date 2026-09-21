@@ -11,12 +11,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 const PAGE_SIZE = 50;
 
+function humanize(code: string): string {
+  return code
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 function formatDetails(json: string): string {
   if (!json) return '—';
   try {
     const parsed = JSON.parse(json);
     return Object.entries(parsed)
-      .map(([k, v]) => `${k}=${v}`)
+      .map(([k, v]) => `${humanize(k)}: ${v}`)
       .join(', ');
   } catch {
     return json;
@@ -111,7 +119,7 @@ export default function AuditLog() {
               <SelectItem value="all">All Actions</SelectItem>
               {actions.map((a) => (
                 <SelectItem key={a} value={a}>
-                  {a}
+                  {humanize(a)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -127,7 +135,7 @@ export default function AuditLog() {
               <SelectItem value="all">All Entities</SelectItem>
               {entities.map((e) => (
                 <SelectItem key={e} value={e}>
-                  {e}
+                  {humanize(e)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -172,9 +180,9 @@ export default function AuditLog() {
               <TableRow key={r.id}>
                 <TableCell className="text-muted-foreground whitespace-nowrap">{r.created_at.slice(0, 19).replace('T', ' ')}</TableCell>
                 <TableCell>{r.user_full_name || <span className="text-muted-foreground">System</span>}</TableCell>
-                <TableCell className="font-medium">{r.action}</TableCell>
+                <TableCell className="font-medium">{humanize(r.action)}</TableCell>
                 <TableCell className="text-muted-foreground">
-                  {r.entity}
+                  {humanize(r.entity)}
                   {r.entity_id ? ` #${r.entity_id}` : ''}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-xs max-w-md truncate" title={formatDetails(r.details_json)}>

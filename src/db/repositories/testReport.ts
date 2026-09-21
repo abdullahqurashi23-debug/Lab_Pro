@@ -17,7 +17,7 @@ export function getTestReportForPeriod(db: Database.Database, filters: TestRepor
          reports.id as report_id,
          reports.report_no,
          patients.full_name as patient_name,
-         COALESCE(GROUP_CONCAT(DISTINCT report_tests.test_name_snapshot), '') as test_names,
+         COALESCE(GROUP_CONCAT(DISTINCT report_tests.short_code_snapshot), '') as test_codes,
          doctors.name as doctor_name,
          reports.subtotal,
          reports.discount,

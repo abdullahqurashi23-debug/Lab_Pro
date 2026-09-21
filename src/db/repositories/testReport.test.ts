@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../testUtils';
-import { createTest } from './tests';
+import { createTest, updateTest } from './tests';
 import { createPatient } from './patients';
 import { createReport } from './reports';
 import { getTestReportForPeriod } from './testReport';
@@ -62,13 +62,34 @@ describe('test report — daily / weekly / monthly register', () => {
     expect(result.totals.subtotal).toBe(500);
   });
 
-  it('one row per report, with every test on that report joined into test_names', () => {
+  it('one row per report, with every test on that report joined into test_codes', () => {
     finalizedReportOnDay(0, { price: 300, testCount: 3 });
 
     const result = getTestReportForPeriod(ctx.db, { granularity: 'daily' });
     expect(result.rows).toHaveLength(1);
-    const names = result.rows[0].test_names.split(',');
-    expect(names).toHaveLength(3);
+    const codes = result.rows[0].test_codes.split(',');
+    expect(codes).toHaveLength(3);
+  });
+
+  it('shows the short code, snapshotted — a later rename in the catalog never changes an already-finalized report', () => {
+    const test = createTest(ctx.db, { name: 'Complete Blood Count', short_code: 'CBC', price: 500, parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'Snapshot Patient', age: 30, age_unit: 'Years', gender: 'Male' });
+    const report = createReport(
+      ctx.db,
+      {
+        patient: { id: patient.id, full_name: patient.full_name, age: patient.age, age_unit: patient.age_unit, gender: patient.gender },
+        doctor_id: null,
+        tests: [{ test_id: test.id, results: [] }],
+      },
+      null
+    );
+    ctx.db.prepare("UPDATE reports SET status = 'FINALIZED', finalized_at = datetime('now') WHERE id = ?").run(report.id);
+
+    // Catalog is renamed AFTER the report already exists.
+    updateTest(ctx.db, test.id, { name: 'Complete Blood Count', short_code: 'CBC-NEW', price: 500 });
+
+    const result = getTestReportForPeriod(ctx.db, { granularity: 'daily' });
+    expect(result.rows[0].test_codes).toBe('CBC');
   });
 
   it('totals sum subtotal, discount, and total across every row in the period', () => {

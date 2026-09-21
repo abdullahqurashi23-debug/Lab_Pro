@@ -126,7 +126,7 @@ export default function TestReport() {
                 {report.rows.map((r) => (
                   <TableRow key={r.report_id}>
                     <TableCell className="font-medium">{r.patient_name}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.test_names.split(',').join(', ')}</TableCell>
+                    <TableCell className="text-muted-foreground">{r.test_codes.split(',').join(', ')}</TableCell>
                     <TableCell className="text-muted-foreground">{r.doctor_name || 'Self'}</TableCell>
                     <TableCell className="text-right">{fmt(r.subtotal)}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{r.discount ? `-${fmt(r.discount)}` : '—'}</TableCell>
