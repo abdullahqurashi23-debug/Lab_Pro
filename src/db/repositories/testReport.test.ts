@@ -81,14 +81,17 @@ describe('test report — daily / weekly / monthly register', () => {
     expect(result.totals.total).toBe(1300);
   });
 
-  it('weekly includes the last 7 days, excludes something from 10 days ago', () => {
+  it('weekly is the current Monday-Sunday calendar week, not a rolling 7 days — today always included, 8+ days ago never is', () => {
+    // 8 days ago can never fall in the current Mon-Sun week regardless of
+    // which day this test happens to run on (a week is at most 7 days),
+    // so this is a day-of-week-agnostic way to prove it's a real calendar
+    // week boundary rather than a trailing window.
     finalizedReportOnDay(0, { price: 100 });
-    finalizedReportOnDay(6, { price: 200 });
-    finalizedReportOnDay(10, { price: 5000 });
+    finalizedReportOnDay(8, { price: 5000 });
 
     const result = getTestReportForPeriod(ctx.db, { granularity: 'weekly' });
-    expect(result.rows).toHaveLength(2);
-    expect(result.totals.subtotal).toBe(300);
+    expect(result.rows).toHaveLength(1);
+    expect(result.totals.subtotal).toBe(100);
   });
 
   it('monthly includes everything so far this calendar month', () => {

@@ -39,9 +39,15 @@ function getAnchors(db: Database.Database): PeriodAnchors {
       `SELECT
         date('now') as today,
         date('now','-1 day') as yesterday,
-        date('now','-6 days') as week_start,
-        date('now','-7 days') as prev_week_end,
-        date('now','-13 days') as prev_week_start,
+        -- Monday-Sunday calendar week, not a rolling trailing 7 days.
+        -- strftime('%w') is 0=Sunday..6=Saturday; (%w + 6) % 7 gives the
+        -- number of days since the most recent Monday (0 when today
+        -- already is Monday) — the same expression BUCKET_EXPR.week below
+        -- already uses to group the trend chart into Monday-start weeks,
+        -- so "this week" now means the same thing everywhere in this file.
+        date('now', '-' || ((strftime('%w','now') + 6) % 7) || ' days') as week_start,
+        date('now', '-' || (((strftime('%w','now') + 6) % 7) + 1) || ' days') as prev_week_end,
+        date('now', '-' || (((strftime('%w','now') + 6) % 7) + 7) || ' days') as prev_week_start,
         date('now','start of month') as month_start,
         date('now','start of month','-1 month') as prev_month_start,
         date('now','start of month','-1 day') as prev_month_end,

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../testUtils';
 import { createTest } from './tests';
 import { createPatient } from './patients';
-import { createReport, finalizeReport, listReportsPage, getReportById } from './reports';
+import { createReport, finalizeReport, listReportsPage, getReportById, updateDraftReport } from './reports';
 import { recordPayment } from './payments';
 
 describe('listReportsPage — search, filter, sort, pagination', () => {
@@ -137,5 +137,47 @@ describe('billing math never goes negative', () => {
     expect(report.total).toBe(500);
     expect(report.paid).toBe(800); // the amount actually collected is preserved exactly
     expect(report.balance).toBe(0); // never negative
+  });
+
+  it('clamps discount to the subtotal on create, so Gross - Discount = Net always holds exactly', () => {
+    const test = createTest(ctx.db, { name: 'CBC', short_code: 'CBC2', price: 500, parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'Over-discounted', age: 30, age_unit: 'Years', gender: 'Male' });
+    const report = createReport(
+      ctx.db,
+      {
+        patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' },
+        doctor_id: null,
+        discount: 5000, // far more than the 500 subtotal
+        tests: [{ test_id: test.id, results: [] }],
+      },
+      null
+    );
+    expect(report.subtotal).toBe(500);
+    expect(report.discount).toBe(500); // clamped down to the subtotal, not stored as 5000
+    expect(report.total).toBe(0);
+    expect(report.subtotal - report.discount).toBe(report.total); // the identity holds exactly
+  });
+
+  it('clamps discount to the subtotal on updateDraftReport too', () => {
+    const test = createTest(ctx.db, { name: 'CBC', short_code: 'CBC3', price: 300, parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'Edited Discount', age: 30, age_unit: 'Years', gender: 'Male' });
+    const draft = createReport(
+      ctx.db,
+      {
+        patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' },
+        doctor_id: null,
+        tests: [{ test_id: test.id, results: [] }],
+      },
+      null
+    );
+    const updated = updateDraftReport(ctx.db, draft.id, {
+      patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' },
+      doctor_id: null,
+      discount: 9999,
+      tests: [{ test_id: test.id, results: [] }],
+    });
+    expect(updated.subtotal).toBe(300);
+    expect(updated.discount).toBe(300);
+    expect(updated.total).toBe(0);
   });
 });

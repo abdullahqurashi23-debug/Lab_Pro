@@ -237,9 +237,20 @@ export default function NewReport() {
     };
   }, [patient, doctorId, billing, notes, performedBy, selectedTests, subtotal]);
 
+  // A reentrancy guard distinct from the `saving` state — `saving` is only
+  // ever set for NON-silent saves (so the button can show "Saving…"),
+  // meaning it does nothing to stop two SILENT auto-saves from overlapping.
+  // If a save is ever slow enough to still be in flight when the next
+  // 5-second auto-save tick fires, and this report hasn't been assigned a
+  // reportId yet (both calls still mid-flight), both would independently
+  // call api.reports.create() and silently produce two separate draft
+  // reports for the same session. A ref closes this regardless of which
+  // caller (auto-save, manual Save Draft, Preview, Finalize) triggers it.
+  const savingRef = useRef(false);
   const save = useCallback(
     async (silent: boolean): Promise<{ id: number; status: 'DRAFT' | 'FINALIZED' } | null> => {
-      if (!canSave) return null;
+      if (!canSave || savingRef.current) return null;
+      savingRef.current = true;
       if (!silent) setSaving(true);
       try {
         const payload = buildPayload();
@@ -256,6 +267,7 @@ export default function NewReport() {
         toast.error(err instanceof Error ? err.message : 'Failed to save report.');
         return null;
       } finally {
+        savingRef.current = false;
         if (!silent) setSaving(false);
       }
     },

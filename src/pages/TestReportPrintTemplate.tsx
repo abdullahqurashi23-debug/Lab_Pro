@@ -105,8 +105,23 @@ export default function TestReportPrintTemplate() {
             </tr>
           )}
         </tbody>
-        {report.rows.length > 0 && (
-          <tfoot>
+      </table>
+      {/* Deliberately NOT a <tfoot>: Chromium's print engine repeats a
+          <tfoot> on every page a <table> spans (verified empirically),
+          which would make this grand-total row print once per page
+          instead of once at the true end. A plain block after the
+          table only ever renders where the table itself ends. */}
+      {report.rows.length > 0 && (
+        <table className="w-full border-collapse table-fixed">
+          <colgroup>
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '18%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '13%' }} />
+          </colgroup>
+          <tbody>
             <tr className="border-t-2 border-black font-bold">
               <td className="py-1.5 pr-2" colSpan={3}>
                 Total ({report.rows.length} report{report.rows.length === 1 ? '' : 's'})
@@ -115,9 +130,9 @@ export default function TestReportPrintTemplate() {
               <td className="py-1.5 pr-2 text-right whitespace-nowrap">{report.totals.discount ? `-${fmt(report.totals.discount)}` : '—'}</td>
               <td className="py-1.5 text-right whitespace-nowrap">{fmt(report.totals.total)}</td>
             </tr>
-          </tfoot>
-        )}
-      </table>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

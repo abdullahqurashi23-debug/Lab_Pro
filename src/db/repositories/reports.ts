@@ -40,6 +40,20 @@ function insertResultRow(db: Database.Database, reportTestId: number, r: Compute
 }
 
 function writeReportTests(db: Database.Database, reportId: number, input: NewReportInput, isChild: boolean, gender: Gender | null): number {
+  // The New Report UI already refuses to add a test that's already
+  // selected, but that's a UI-only safeguard — nothing stopped a direct
+  // IPC call (or a future UI bug) from submitting the same test_id twice,
+  // silently double-charging its price into the subtotal and creating two
+  // report_tests rows with the same React key wherever the report is later
+  // rendered (e.g. ResultEntryCard keys by test.id).
+  const seenTestIds = new Set<number>();
+  for (const item of input.tests) {
+    if (seenTestIds.has(item.test_id)) {
+      throw new Error(`Test #${item.test_id} was submitted more than once for the same report.`);
+    }
+    seenTestIds.add(item.test_id);
+  }
+
   const insertReportTest = db.prepare(
     'INSERT INTO report_tests (report_id, test_id, test_name_snapshot, price_snapshot) VALUES (?, ?, ?, ?)'
   );
@@ -85,7 +99,7 @@ export function createReport(db: Database.Database, input: NewReportInput, creat
 
     const isChild = isChildPatient(patient);
     const reportNo = generateReportNo(db);
-    const discount = input.discount || 0;
+    const rawDiscount = input.discount || 0;
     const paid = input.paid || 0;
 
     const reportInfo = db
@@ -97,7 +111,7 @@ export function createReport(db: Database.Database, input: NewReportInput, creat
         reportNo,
         patient.id,
         input.doctor_id || null,
-        discount,
+        rawDiscount,
         paid,
         input.payment_method || '',
         input.notes || '',
@@ -107,13 +121,29 @@ export function createReport(db: Database.Database, input: NewReportInput, creat
     const reportId = reportInfo.lastInsertRowid as number;
 
     const subtotal = writeReportTests(db, reportId, input, isChild, patient.gender);
+    // Clamped against the now-known subtotal — a discount can't exceed what
+    // there was to discount in the first place. Without this, a discount
+    // larger than the subtotal (bad client data, or a report edited down
+    // to fewer/cheaper tests after the discount was set) would leave the
+    // stored `discount` figure larger than `subtotal`, so `subtotal -
+    // discount` would go negative even though `total` itself is correctly
+    // floored at 0 below — breaking the "Gross - Discount = Net" identity
+    // anywhere `discount` is reported on its own (e.g. revenue's "total
+    // discounts given").
+    const discount = Math.min(subtotal, rawDiscount);
     const total = Math.max(0, subtotal - discount);
     // Clamped at 0 rather than left negative on overpayment (paid > total)
     // — the amount actually collected stays in `paid` exactly as entered,
     // this only affects what's shown/stored as still owed.
     const balance = Math.max(0, total - paid);
 
-    db.prepare('UPDATE reports SET subtotal = ?, total = ?, balance = ? WHERE id = ?').run(subtotal, total, balance, reportId);
+    db.prepare('UPDATE reports SET discount = ?, subtotal = ?, total = ?, balance = ? WHERE id = ?').run(
+      discount,
+      subtotal,
+      total,
+      balance,
+      reportId
+    );
 
     return reportId;
   });
@@ -152,7 +182,9 @@ export function updateDraftReport(db: Database.Database, reportId: number, input
     db.prepare('DELETE FROM report_tests WHERE report_id = ?').run(reportId);
 
     const subtotal = writeReportTests(db, reportId, input, isChild, patient.gender);
-    const discount = input.discount || 0;
+    // Same clamp as createReport — see the comment there for why a
+    // discount can never be allowed to exceed the subtotal it applies to.
+    const discount = Math.min(subtotal, input.discount || 0);
     const paid = input.paid || 0;
     const total = Math.max(0, subtotal - discount);
     const balance = Math.max(0, total - paid);

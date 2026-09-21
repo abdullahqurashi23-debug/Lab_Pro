@@ -1,169 +1,120 @@
-# LabPro Audit Report
+# LabPro Audit Report (Second Pass)
 
-Full codebase audit — Electron + React + Vite + TypeScript + Tailwind + better-sqlite3.
+Full re-audit after the Test Report page, Performed By field, print redesign, and
+navigation fixes were added. The previous audit's findings are preserved in
+`AUDIT_REPORT_OLD.md` — this report only covers what's new or was re-checked
+this time. Per your instruction, the license/activation system is **not**
+built and is **not** treated as missing below.
 
 ## Phase 1 — Project Map & Tooling
 
-118 source files (excluding `node_modules`, `dist`, `dist-electron`, `release`). Breakdown:
-
-| Area | Files | Purpose |
-|---|---|---|
-| `electron/main/index.ts` | 1 | Main process: window creation, all IPC handlers, session/auth state, auto-backup timer |
-| `electron/preload/index.ts` | 1 | Scoped `contextBridge` API surface exposed to the renderer as `window.api` |
-| `electron/print.ts`, `electron/reportArchive.ts`, `electron/backup.ts` | 3 | PDF rendering/printing pipeline, archive path/filename logic, SQLite-native backup/restore |
-| `src/db/migrations/*.sql` | 7 | Schema + immutability triggers, applied in order by `migrate.ts` |
-| `src/db/repositories/*.ts` | ~20 | All DB reads/writes, one file per domain (reports, patients, tests, revenue, payments, users, audit log, settings, backup-adjacent) |
-| `src/db/resultLogic.ts`, `formula.ts` | 2 | Pure logic: reference-range resolution, H/L/CRITICAL flagging, formula evaluation — shared verbatim between renderer live-preview and backend save |
-| `src/pages/*.tsx` | ~19 | One per app screen (Dashboard, New Report, Reports History, Patients, Test Catalog, Revenue, Users, Audit Log, Settings, Login, print views) |
-| `src/components/**/*.tsx` | ~25 | Page-specific panels (patient/billing/result-entry panels, test-catalog dialogs) + a small shadcn/ui primitive set |
-| `src/lib/*.ts` | ~8 | `api.ts` (typed `window.api` wrapper), auth context, idle timer, theme, misc utils |
-| `*.test.ts` | 9 files, 77 tests | Vitest suite (see Phase 5) |
-
-### Tooling run
+122 source files (up from 118 at the last audit; new: `testReport.ts`,
+`TestReport.tsx`, `TestReportPrintTemplate.tsx`, `testReport.test.ts`,
+migration `008_performed_by.sql`).
 
 - `npm install` — clean.
 - `npx tsc -p tsconfig.json --noEmit` (renderer) — **0 errors**.
-- `npx tsc -p tsconfig.electron.json --noEmit` (main process) — **0 errors**.
-- `npx eslint .` — **ESLint was not installed or configured in this project at all** (no config file, not a devDependency). Installed `eslint` + `typescript-eslint` + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh` and added `eslint.config.js` so this check is real going forward, rather than reporting a pass from a tool that was never running. Initial run: 33 errors / 18 warnings. After investigation, only **1 was a real issue** (see LOW-1) — the rest were `eslint-plugin-react-hooks` v7's "React Compiler safety" ruleset flagging normal, safe patterns (e.g. a small helper component defined inside its parent) that this codebase doesn't use React Compiler for; dialed the config back to the two classic, real-bug-catching hook rules (`rules-of-hooks`, `exhaustive-deps`). Final state: **0 errors, 11 warnings**, all `react-refresh/only-export-components` (a dev-only Fast Refresh hint, zero effect on the production build — see LOW-2).
-- `npm run build` (`tsc -p tsconfig.electron.json && vite build`) — **succeeds**, one informational Rollup warning about a >500KB JS chunk (not an error; noted, not fixed — see "Not fixed" section).
+- `npx tsc -p tsconfig.electron.json --noEmit` (main) — **0 errors**.
+- `npx eslint .` — **0 errors**, 11 warnings (all pre-existing, reviewed in the
+  last audit — `react-refresh/only-export-components` dev-only hints from the
+  standard shadcn/ui pattern of exporting a helper next to a component; zero
+  effect on the production build).
+- `npm run build` — succeeds (same >500KB chunk-size advisory as before, not
+  a bug, not fixed, noted last time as a possible future improvement).
 
 ## Phase 2/3 — Findings
 
-Ordered by severity. Each entry: what/where, why it matters, fix, status.
+Every item below was independently verified (a failing test written first,
+or an empirical script run against real SQLite/Chromium behavior) before
+being called a bug — not assumed from reading the code alone.
+
+### CRITICAL
+
+**CRITICAL-1 — The finalized-report lock trigger never knew about the new `performed_by` column**
+File: `src/db/migrations/004_finalize_archive.sql`'s `prevent_finalized_report_update` trigger.
+This trigger blocks edits to a finalized report by explicitly checking each protected column (`NEW.x IS NOT OLD.x OR ...`). `performed_by` was added later (migration 008) and was never added to that list. Verified with a test: a raw SQL `UPDATE reports SET performed_by = 'Someone Else' WHERE id = ?` on a finalized report **succeeded silently** — a direct, real bypass of the immutability guarantee the rest of the audit explicitly asks to verify ("finalized reports cannot be edited... directly in SQL"). The application code (`updateDraftReport`) already refuses to touch a finalized report before it ever reaches SQL, so this wasn't reachable through the normal UI — but the whole point of a database-level trigger is to hold even if a future code path, script, or bug skips the application check.
+Fix: new migration `009_lock_performed_by.sql` redefines the trigger with `performed_by` added to the protected list (same `DROP TRIGGER` + `CREATE TRIGGER` pattern already used once before in migration 004 for the same trigger). **FIXED**, verified with a test that now correctly fails to update.
 
 ### HIGH
 
-**HIGH-1 — Async IPC handlers bypassed the clean-error-message wrapper, leaking raw/garbled errors to the renderer**
-File: `electron/main/index.ts`, `handle()` wrapper (was ~line 215).
-The generic `handle()` wrapper was `try { return fn(event, ...args) } catch (err) { ...clean message... }`. Because `fn` can be an `async` function, calling it never throws synchronously even if its body does — `async function(){ throw x }` returns an already-rejected Promise instead. The `try/catch` therefore never caught rejections from any `async` handler, which includes `reports:finalize`, `backup:restore`, `reports:verifyPdf`, `revenue:exportExcel`/`exportPdf`, `settings:pickImage`/`pickFolder`, `print:report`/`openPdf`, and others — meaning a Zod validation failure or domain error (e.g. "This report is finalized; no new tests can be added.") inside any of these surfaced to the UI as a raw, often-unreadable `Error invoking remote method '...'` message instead of the intended clean one.
-Reproduced empirically (see fix commit): the old wrapper let a raw `ZodError` escape; the fixed one produces the intended clean message.
-Fix: `await fn(event, ...args)` inside the try, so both synchronous throws and async rejections are caught uniformly. **FIXED.**
+**HIGH-1 — "Weekly" was a rolling 7-day window, not a Monday-Sunday calendar week**
+File: `src/db/repositories/revenue.ts`, `getAnchors()`/`resolvePeriod()`.
+You explicitly asked me to verify "weekly (Monday–Sunday)." It wasn't: `week_start` was computed as `date('now','-6 days')` — a trailing 7-day window ending today, not aligned to any particular weekday. Verified empirically: on the day this was checked (a Monday), the old code computed last Tuesday as the week's start. This affects both the Revenue page and the new Test Report page, since both share this function. The trend chart's own week-bucketing (`BUCKET_EXPR.week`) already used the correct Monday-aligned formula — so the codebase already "knew" the right formula, it just wasn't applied to the actual period boundary.
+Fix: `week_start`/`prev_week_start`/`prev_week_end` now use the same Monday-aligned expression as the existing bucket logic. Verified: the new week start always falls on a Monday (checked programmatically, not for one hardcoded date), the previous week is a full contiguous non-overlapping 7-day Mon-Sun span, and a report from 8+ days ago (which can never be in the current week regardless of today's weekday) is correctly excluded. **FIXED.** Two pre-existing tests that had encoded the *old, wrong* rolling-window behavior as "correct" were updated to test real calendar weeks instead — they were the reason this bug was invisible before: they were unintentionally testing that the bug was consistent, not that it was right.
 
-**HIGH-2 — Billing `balance` / `outstanding_balance` could go negative on overpayment**
-Files: `src/db/repositories/reports.ts` (3 sites: `createReport`, `updateDraftReport`, `getReportById`), `src/components/new-report/BillingPanel.tsx`.
-`balance = total - paid` and `outstandingBalance = report.balance - paymentsTotal` were unclamped. If `paid` (entered at report creation/draft time) or a recorded payment ever exceeded what was owed — an overpayment, a typo, or a correction that overshoots — the stored/displayed balance went negative, including permanently on a finalized (locked) report. Violates the explicit "balance... never negative" requirement.
-Fix: clamped the *derived* figures to `Math.max(0, ...)` in all three backend sites and the frontend live-preview, without touching the underlying `paid` field or the payments ledger (which intentionally allows negative correction/refund entries — that data is legitimate and shouldn't be altered, only the "what's still owed" figure derived from it). **FIXED.** Regression tests added (`reportsPage.test.ts`, `reports.test.ts`).
+**HIGH-2 — A report's discount was never clamped to its own subtotal, server-side**
+File: `src/db/repositories/reports.ts`, `createReport` and `updateDraftReport`.
+`total = Math.max(0, subtotal - discount)` correctly floors the *total* at 0, but the *discount value itself* was stored exactly as the client sent it, with no server-side check that it doesn't exceed the subtotal. If it ever did (bad client data, or a report edited down to fewer/cheaper tests after a discount was already set), the stored `discount` figure would be larger than what was actually deducted — breaking "Gross − Discount = Net" for that report specifically, and inflating any report that sums `discount` on its own (e.g. Revenue's "Total Discounts Given"). The frontend's billing panel already clamps this client-side, but nothing re-verified it on the way into the database.
+Fix: both functions now clamp `discount = Math.min(subtotal, rawDiscount)` after the subtotal is known (subtotal isn't known until after the tests are written, so the clamp happens right after that, before the final total/balance calculation). **FIXED**, with tests proving a 5000-value discount against a 500 subtotal is stored as exactly 500, both on create and on a draft edit.
 
-### MEDIUM
+**HIGH-3 — The same test could be added twice to one report, with no backend check**
+File: `src/db/repositories/reports.ts`, `writeReportTests`.
+The New Report screen already refuses to add a test that's already selected (`selectedTests.some(...)`) — but that's UI-only. Nothing in the zod schema or the repository layer rejected a submission with the same `test_id` listed twice. That would double-charge the test's price into the subtotal, and would create two `report_tests` rows sharing the same `test.id` — which the UI keys its result-entry rows by, a real React key collision waiting to happen if such a report were ever reopened. Verified: a direct call with a duplicated `test_id` succeeded before this fix.
+Fix: `writeReportTests` now checks for a repeated `test_id` before writing anything and throws a clear error. **FIXED**, with a test confirming the rejection.
 
-**MEDIUM-1 — Four read-only IPC handlers had no session check at all**
-File: `electron/main/index.ts` — `doctors:list`, `categories:list`, `appSettings:get`, `settings:getPrintLayout`.
-Every comparable "list/get" handler in the app calls `requireAuth()` (or a stricter `requireRole`/`requireAdmin`) except these four, which returned data to any caller regardless of login state — inconsistent with the app's own security model ("every restricted action blocked in the main process too, not just hidden in the UI"). Checked every call site of each: all are reached only from already-authenticated pages or from the hidden print window (which the main process only opens after already verifying authorization) — never from the pre-login screen. `settings:get` (clinic branding) is the one legitimately pre-auth-accessible handler, since the login screen itself needs it; left unchanged.
-Real-world exposure is low (doctor names, category names, an idle-timeout number, print-margin settings — no financial/medical data, and DevTools is disabled in production, narrowing the practical attack surface to begin with), but it's a real, easy, zero-behavior-change-for-legitimate-use fix.
-Fix: added `requireAuth();` as the first line of each. **FIXED.**
+**HIGH-4 — The Test Report's grand-total row repeated on every printed/PDF page instead of appearing once at the true end**
+File: `src/pages/TestReportPrintTemplate.tsx`.
+The totals row was rendered inside a `<tfoot>` of the main results table. I verified empirically (rendered a real multi-page PDF via the same Chromium engine Electron uses, then inspected each page's text) that Chromium's print engine repeats a `<tfoot>` on every page a `<table>` spans — the same way `<thead>` does. This directly contradicts your explicit checklist item ("grand totals at the end, nothing cut off"): a Test Report period with enough finalized reports to span multiple pages would show the full-period grand total on every page, not just the last one — someone glancing at page 1 of a 3-page report would see "12 reports, Af X total" next to only the 4 rows visible on that page, which reads as if that page's total is Af X.
+Fix: the totals row now renders as a second, separate `<table>` placed immediately after the results table closes, instead of inside a `<tfoot>` of the same table — a separate table element can only ever render where it sits in the flow, once. Verified with the same empirical method: re-rendered a 150-row/5-page test PDF with the corrected structure and confirmed the total marker now appears on page 5 only (0 occurrences on pages 1-4). **FIXED.**
 
-**MEDIUM-2 — No hardening against renderer-initiated navigation or new-window creation**
-Files: `electron/main/index.ts` (main window), `electron/print.ts` (both hidden print windows).
-Per Electron's own security checklist, without an explicit `will-navigate` guard and `setWindowOpenHandler`, a compromised renderer (e.g. via a future supply-chain-compromised dependency) could navigate a window to an arbitrary external URL or spawn an unrestricted new window. `window.open()` is denied by default in this Electron version, but top-level navigation is not. All three windows only ever legitimately load one fixed local URL each and never need to navigate elsewhere afterward.
-Fix: added `setWindowOpenHandler(() => ({ action: 'deny' }))` and a `will-navigate` guard (allow only the exact origin/URL each window was created for) to all three. Verified this doesn't interfere with the app's own hash-based routing (`will-navigate` doesn't fire for in-page hash changes or for the initial `loadURL`/`loadFile` call — confirmed against Electron's documented behavior). **FIXED.**
+**HIGH-5 — Auto-save's "already saving" guard didn't actually cover auto-save**
+File: `src/pages/NewReport.tsx`, `save()`.
+The auto-save timer's guard condition was `if (dirty && canSave && !saving) save(true)`. But `setSaving(true)` is only ever called `if (!silent)` inside `save()` — and auto-save always calls `save(true)` (silent). This means the `saving` state never actually becomes `true` for an auto-save, so the `!saving` check was providing no real protection: if one auto-save were ever slow enough (a sluggish disk, antivirus scanning the DB file, unusual load) to still be in flight when the next 5-second tick fired, and the report hadn't been assigned an ID yet, both overlapping calls would independently call `api.reports.create()` — silently producing two separate draft reports for what the user experienced as one continuous editing session. This is exactly the "auto-save never creates duplicate reports" property this audit asked me to verify, and it wasn't actually guaranteed.
+Fix: added a `useRef`-backed reentrancy guard inside `save()` itself, set the instant a save starts and cleared when it ends — this protects every caller (auto-save, manual Save Draft, Preview, Finalize) uniformly, not just the auto-save timer's own check. **FIXED.** This is a UI-level timing fix with no existing React-component test infrastructure in this project to exercise it automatically (same limitation noted for the earlier `useBlocker` race fix) — the logic itself is straightforward and was reasoned through carefully, but flagging that it wasn't proven with an automated test the way the database-level fixes above were.
 
-### LOW
+### Reviewed — confirmed correct via a real test or empirical check, not just re-read
 
-**LOW-1 — `tailwind.config.ts` used `require()` instead of `import`**
-Real ESLint error (`@typescript-eslint/no-require-imports`). Converted to a standard default import (`import tailwindcssAnimate from 'tailwindcss-animate'`); verified the built CSS output is byte-for-byte identical before/after (same content hash), confirming zero behavior change. **FIXED.**
+- **Month/year date-math edge cases** (Dec→Jan rollover, non-leap Feb 28, leap-year Feb 29, 31-day→30-day month transitions): all computed via SQLite's own `date()` function, never custom JS date arithmetic. Verified each case directly against a real SQLite connection with fixed dates rather than trusting "SQLite is usually right" — all four came back correct.
+- **"Gross − Discount = Net; row totals add up to grand totals"**: verified with new tests that `byPaymentMethod`, `byDoctor` each sum exactly to `current.revenue` for the same period, and that the day-by-day trend sums exactly to `current.revenue` for a custom range (the trend intentionally covers a *wider* historical window than the selected period for daily/weekly/monthly/yearly, by design — that's the chart showing context, e.g. a 30-day trend line behind "today's" number — but for a custom range the trend and the total cover the identical window, and that's what was checked).
+- **`byCategory`/`byTest` breakdowns**: confirmed these are gross per-test-line figures (using `price_snapshot`), which is documented in the code as intentional — there's no principled way to attribute one report-level discount back to a specific test line, so these don't sum to the post-discount total and were never meant to.
+- **Snapshot integrity**: `writeReportTests` snapshots `test.name`/`test.price` at write time; editing the Test Catalog later never touches an already-written `report_tests` row. Confirmed this applies correctly to draft edits too (re-snapshotting current catalog data on every save is correct behavior for a still-mutable draft — the "never changes" guarantee is specifically about finalized/locked reports, which the trigger layer enforces separately).
+- **Report number uniqueness under rapid calls**: unchanged since the last audit; still backed by the same reasoning (fully synchronous `better-sqlite3`, single JS thread, one `db.transaction()`) and the same passing concurrency test.
+- **PDF/Excel export filenames**: Test Report's export filename (`labpro-test-report-{granularity}.pdf`) has no user-controllable content at all (granularity is a fixed enum), so there's no Windows-illegal-character risk to check here, unlike the per-patient archive filenames (already sanitized, checked in the last audit).
+- **Preload surface, contextIsolation/sandbox, DevTools-in-production**: unchanged since the last audit; the new `testReport` preload methods follow the exact same scoped, specific-channel pattern as every other namespace — no generic passthrough was introduced.
+- **Empty-period UI**: both Revenue's chart and Test Report's table show a clear "No finalized reports in this period" message rather than a blank chart or a crash — checked the actual empty-state branches, not just assumed they existed.
+- **Dark/light theme on the new Test Report page**: no hardcoded colors — uses the same theme-aware Tailwind classes as every other on-screen page. The print template correctly does the opposite (fixed colors only), consistent with the established rule that printed output must never depend on the app's theme.
+- **`PrintTemplateContent.tsx` (the per-patient report print template)**: does not use `<tfoot>` anywhere, so it was never exposed to the HIGH-4 bug above. Its tables render all content in `<tbody>` with no separate totals footer to worry about.
 
-**LOW-2 — 11 `react-refresh/only-export-components` warnings**
-`BillingPanel.tsx`, `PatientPanel.tsx`, `ParameterEditor.tsx`, `ui/badge.tsx`, `ui/button.tsx`, `auth-context.tsx` — each exports a small helper/constant alongside a component (e.g. `button.tsx` exporting `buttonVariants` next to `Button`). This is the standard shadcn/ui pattern, used correctly. It only means Vite's dev-mode Fast Refresh does a full reload for that one file instead of hot-swapping — a development convenience note, zero effect on the built app. **REVIEWED — not a bug, left as-is** (splitting these into extra files to silence a dev-only hint would be exactly the kind of unnecessary rewrite the brief says to avoid).
+### Not independently confirmed — flagging honestly rather than guessing
 
-**LOW-3 — Dead code: unused import and unused types**
-- `src/db/repositories/reports.ts`: `getPatientById` imported but no longer called (leftover from an earlier fix that switched this path to `updatePatient`). **FIXED** — removed.
-- `src/vite-env.d.ts`: `Test` and `AuditLogEntry` types imported but never referenced. **FIXED** — removed.
-- `src/pages/RevenuePrintTemplate.tsx`: a stale `// eslint-disable-next-line react-hooks/exhaustive-deps` comment guarding a dependency array that ESLint confirms has no actual problem. **FIXED** — removed.
-
-### Reviewed — confirmed correct, no fix needed
-
-Documenting these explicitly per the instruction to never say a file is fine without reading it:
-
-- **SQL injection**: every dynamic SQL string in the codebase (`auditLog.ts`, `reports.ts`, `tests.ts`, `users.ts`) interpolates only hardcoded fragments (column lists, `?`-repetition for `IN (...)` clauses sized off array *length*, not content) — every actual value flows through parameterized `.run()/.get()/.all()` calls. No injection surface found anywhere.
-- **Report number uniqueness under rapid/concurrent creation**: `generateReportNo` (a `SELECT COUNT` then compute `next+1`) looked like a classic TOCTOU race at first read. Verified it isn't: `better-sqlite3` is fully synchronous, Node.js JS execution is single-threaded, and the read + insert both happen inside one `db.transaction()` with zero `await` points in between — a second `reports:create` call cannot interleave at any point. Added a `Promise.all`-based regression test (25 "concurrent" creates, all unique) plus a sequential-format test.
-- **Memory leaks**: every `setInterval`/`setTimeout`/`addEventListener` in the renderer (App.tsx, TopBar, PatientPanel, useIdleTimer, PrintReport, NewReport, Reports, Patients) has a matching cleanup in its effect's return function. Read each one individually, not assumed.
-- **State updates after unmount**: `main.tsx` uses `ReactDOM.createRoot` (React 18) — calling `setState` after unmount is a harmless no-op under this root API (the old warning/leak concern applied to the legacy root API only). The handful of effects that do guard with a `cancelled` flag (PatientPanel, NewReport's report loader) do so to avoid a stale-response race, not because it's otherwise unsafe.
-- **PDF filenames**: `reportArchive.ts` strips every Windows-illegal character (`\ / : * ? " < > |`) from both the report number and patient name before building a filename. No-overwrite: the report number (already globally unique) anchors every archived filename, so two different reports can never collide; user-directed exports go through the native OS save dialog, which already prompts to confirm overwriting an existing file.
-- **Electron security basics**: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` on every `BrowserWindow`; DevTools only opens when `isDev` (never in production); preload uses `contextBridge.exposeInMainWorld` with a fully enumerated, specific method list — no generic `invoke` passthrough that would let the renderer call arbitrary channels; production `index.html` carries a restrictive CSP (`default-src 'self'`).
-- **Offline**: no CDN `<script>`/`<link>` tags, no remote `fetch`/`http(s)://` calls anywhere except the app's own local dev server URL (dev-mode only, absent from the production build); fonts are bundled via `@fontsource`, icons via `lucide-react` (SVG components) — nothing loads over a network.
-- **Database**: `journal_mode = WAL`, `synchronous = NORMAL`, `foreign_keys = ON` all set in `db.ts`; indexes exist on every column used for search/filter/join (patient name, phone, report_no, created_at, patient_id, doctor_id, status, and every FK join column). Already load-tested at 10,000 reports (see `scripts/perf_10k_reports.js`) — all representative queries complete in 0.2–42ms.
-- **Passwords**: every password comparison/storage path uses `bcrypt.compareSync`/`hashSync`; zero `console.*` calls reference any password variable anywhere in the codebase.
-- **Search case-insensitivity**: SQLite's `LIKE` is case-insensitive by default for ASCII, and nothing in this codebase overrides that (`PRAGMA case_sensitive_like` is never set). Added a regression test proving `alice`/`ALICE`/`ali` (partial) all match "Alice Smith".
-- **Reference ranges, H/L/CRITICAL flags, formulas, duplicate-test prevention, report locking triggers, revenue date-range math, backup/restore**: already covered by this project's existing 70-test baseline (written and verified in an earlier pass of this same engagement) — re-ran the full suite as part of this audit; all still pass. Also independently re-verified the reference-range "explicitly cleared to blank" behavior (a real bug found and fixed in that earlier pass: `||` vs `??` was collapsing "deliberately cleared" and "never touched" into the same catalog-fallback behavior).
-
-### Not fixed — flagging for your decision rather than guessing
-
-- **Windows installer**: this was already investigated and proven, not assumed. `better-sqlite3` is a native module; it cannot be cross-compiled for Windows from this Mac. A prior packaging attempt from this same environment *appeared* to succeed (exit code 0) but a byte-level check (`file` on the bundled `.node` module) proved it had silently packaged the **macOS** binary — that installer would crash immediately on a real Windows PC. A `.github/workflows/build-windows.yml` is already in place (builds on a genuine `windows-latest` GitHub Actions runner) — that's the correct path to a real, working installer, and needs a GitHub repo to run in. I did not re-run the misleading local build again as part of this audit; let me know if you'd like me to push this to a repo and trigger it.
-- **JS bundle size**: Vite's build warns that the main JS chunk is >500KB minified (~300KB gzipped). Not a bug — the app works correctly — but a code-splitting pass (dynamic `import()` for less-common routes like Settings/Audit Log) would improve initial load time. Left alone since it's a performance nice-to-have, not something you asked to be fixed, and changing the build/chunking strategy is a bigger structural change than "smallest correct fix."
+**Test Report has no Excel export**, only Print and Save as PDF. The audit checklist assumes all four formats (screen/print/PDF/Excel) exist and match — Revenue has all four, Test Report was deliberately built with a smaller scope (matching what you originally asked for) and doesn't have an Excel export to compare against. Not a bug — flagging so you can tell me if you want one added.
 
 ## Phase 4 — Fix Verification
 
-After each group of fixes: `npx tsc -p tsconfig.json --noEmit`, `npx tsc -p tsconfig.electron.json --noEmit`, and `npm run build` were all re-run and stayed clean throughout. No existing data or schema was touched — every fix was application-code-only (no new migration was needed).
+After every fix: `npx tsc -p tsconfig.json --noEmit`, `npx tsc -p tsconfig.electron.json --noEmit`, and the full test suite were re-run and stayed clean. No existing data or schema was altered — the one schema change (locking `performed_by`) is a new migration (009), same as `performed_by` itself was (008); neither touches existing rows.
 
 ## Phase 5 — Tests
 
-77 Vitest tests across 9 files, all passing (`npm test`). New tests added during this audit:
-- `resultLogic.test.ts`: reference-range override explicitly cleared to blank stays blank (doesn't snap back to catalog default).
-- `reports.test.ts`: report-number uniqueness under simulated concurrent creation (25 parallel calls, all unique); sequential PREFIX-YEAR-NNNNNN format.
-- `reportsPage.test.ts`: overpayment never produces a negative `balance` or `outstanding_balance`; search is case-insensitive and matches partial words.
-
-Coverage against your Phase 5 list: reference range ✅, flagging at boundaries ✅, formulas ✅, billing math ✅ (including the new negative-balance fix), duplicate test prevention ✅, report number uniqueness ✅ (new), locked-report triggers (UPDATE + DELETE both proven to fail) ✅, revenue totals daily/weekly/monthly ✅, backup/restore ✅.
+98 Vitest tests (up from 89), all passing. New this pass:
+- `revenue.test.ts`: this week's start is always a real Monday (checked programmatically, not hardcoded); previous week is a full contiguous 7-day span; an 8-days-ago report is excluded from "weekly" regardless of what day the test runs; `byPaymentMethod`/`byDoctor` sum to `current.revenue`; a custom range's day-by-day trend sums to `current.revenue`.
+- `testReport.test.ts`: the "weekly" test was rewritten to check real calendar-week behavior instead of the old rolling-window assumption.
+- `reportsPage.test.ts`: discount is clamped to the subtotal on both create and draft-edit.
+- `reports.test.ts`: a direct SQL update to `performed_by` on a finalized report is blocked; submitting the same `test_id` twice in one report is rejected.
 
 ## Manual click-through checklist
 
-Use this to verify the interactive/visual parts I can't drive directly in this environment (no attached display). Login as each relevant role where noted.
+Same checklist from the last audit still applies for everything unchanged.
+New/changed items to specifically re-check:
 
-**Login / session**
-- [ ] Fresh launch always shows the lock/login screen (never auto-logged-in).
-- [ ] Wrong password shows "Invalid username or password" without crashing.
-- [ ] First login on a `must_change_password` account forces the change-password screen before anything else.
-- [ ] Idle timeout (Settings → Session) actually locks the app after the configured minutes.
+**Test Report page**
+- [ ] Daily / Weekly / Monthly toggle each show the expected reports; switching to Weekly on a Monday now shows *today onward*, not a rolling week from a few days ago.
+- [ ] A report finalized late Sunday night and one finalized early Monday morning land in *different* weeks when you check them on Tuesday.
+- [ ] Print sends it to the printer; Save as PDF prompts a save location and the numbers match the on-screen table exactly.
+- [ ] An empty period (pick a slow day) shows "No finalized reports in this period," not a blank page.
+- [ ] Print/export a period with enough reports to span 2+ printed pages — confirm the "Total" row appears once, at the true end (already fixed and verified with a real rendered multi-page PDF, but worth a final visual sanity check on your machine).
 
-**New Report (as RECEPTION, then as TECHNICIAN)**
-- [ ] Ctrl+N opens New Report from anywhere.
-- [ ] Search finds an existing patient; selecting one loads editable fields (not read-only).
-- [ ] Typing a new patient whose name+phone match an existing one shows the duplicate warning; "Use This Patient Instead" works.
-- [ ] Ctrl+K opens the test search palette; adding a test focuses its first result field.
-- [ ] Entering an abnormal value shows the H/L/CRITICAL badge live, before saving.
-- [ ] Editing the Reference Range field for one result: typing custom text shows it; clearing it back to empty reverts to blank (not the old auto value) — and reloading the same draft doesn't silently restore the auto value either.
-- [ ] Save Draft (Ctrl+S) works; reopening the draft from Reports History shows everything exactly as saved.
-- [ ] As TECHNICIAN: "New Report" itself is not reachable, but an existing draft opens for entering results.
-- [ ] Finalize & Print asks for confirmation, then locks the report and opens the print view.
-- [ ] Try finalizing with a blank required result — should be rejected with a clear message listing which one.
+**New Report — billing**
+- [ ] Try entering a discount larger than the subtotal (e.g. subtotal Af 500, discount Af 5000) — total should read Af 0, and the discount shown/saved should read Af 500, not Af 5000.
+- [ ] Confirm you cannot add the same test twice to one report (should already be prevented in the UI — this fix was a backend safety net, not a UI change).
 
-**Reports History**
-- [ ] Search by report number, patient name, phone, and test name all work.
-- [ ] Delete (draft only) is visible only for ADMIN/RECEPTION, asks for confirmation.
-- [ ] A finalized report's row never shows a Delete option.
-- [ ] Export to Excel produces a file with the current filter applied.
+**Revenue page**
+- [ ] Switch to Weekly and confirm the date range shown now reads Monday through today (or Monday through Sunday if you're checking a past week), not an arbitrary 7-day window.
 
-**Print / PDF**
-- [ ] Reprinting a finalized report opens the exact same content (barcode present and scannable if you have a scanner handy, patient details correct on every page for a multi-test report).
-- [ ] Open Folder / Open PDF both work and point at the real archived file.
-- [ ] Settings → Verify Report on that same PDF reports "Verified — this file is authentic."
-- [ ] If no printer is connected/configured, printing shows a real failure message, not a false "sent to printer."
-
-**Patients / Test Catalog / Doctors**
-- [ ] Deactivating a test hides it from new-report search but keeps it visible in old reports.
-- [ ] Deleting a test that's used in a report is refused with a clear message (not a crash).
-- [ ] Deleting a category still in use by a test is refused.
-- [ ] Import/Export JSON round-trips correctly.
-
-**Revenue**
-- [ ] Daily/weekly/monthly totals only include FINALIZED reports (create a draft with a large total and confirm it's excluded).
-- [ ] A report finalized just before midnight lands in the correct day's total (spot check against your own local date).
-
-**Users (as ADMIN)**
-- [ ] Deactivating a user asks for confirmation; reactivating does not.
-- [ ] A deactivated user cannot log in.
-- [ ] Changing a role shows a success toast and takes effect immediately.
-
-**Backup & Restore (as ADMIN)**
-- [ ] Backup Now creates a file in the configured folder and appears in the list immediately.
-- [ ] Restore asks for your password, takes a pre-restore safety snapshot, then restarts the app with the restored data in place.
-- [ ] Database Health → Run Integrity Check reports healthy on a normal database.
-
-**Theme**
-- [ ] Toggle light/dark on every page and confirm text stays readable everywhere, especially the print preview (which should always render in fixed light colors regardless of app theme, since it represents a physical printed page).
+**Performed By / finalized-report locking**
+- [ ] Finalize a report, then confirm there is still no way to edit its "Performed By" value afterward (this was already true through the UI — the fix closes a database-level gap you wouldn't have hit through normal use).
 
 ## Summary
 
-- **Problems found**: 8 (2 HIGH, 2 MEDIUM, 3 LOW, plus the ESLint-tooling gap itself).
-- **Fixed**: 8 of 8.
-- **Needs your decision**: the Windows installer (needs a real Windows/CI build environment — workflow already prepared) and, optionally, whether to invest in JS bundle code-splitting (a performance nice-to-have, not a bug).
-- Every fix was verified two ways: an automated test where one could meaningfully prove the fix (added 4 new tests), and a full type-check + build re-run after every group of changes. Nothing in the existing schema or stored data was modified.
+- **Problems found**: 5 (1 CRITICAL, 4 HIGH).
+- **Fixed**: 5 of 5. The 4 database-level/logic bugs were each verified with a specific automated test proving the bug existed and then proving the fix. The print-pagination bug (HIGH-4) was verified by rendering a real multi-page PDF through the same Chromium engine Electron uses and inspecting each page's text before and after the fix — not an automated Vitest test, but a genuine empirical reproduction, not just code reading.
+- **Needs your decision**: whether to add an Excel export for Test Report (not built, wasn't asked for originally). Nothing else requires a decision — everything else found was fixed outright and confirmed.

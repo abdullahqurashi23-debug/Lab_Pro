@@ -99,6 +99,13 @@ describe('finalized-report immutability triggers', () => {
     ).toThrow(/finalized/i);
   });
 
+  it('BLOCKS a direct SQL UPDATE that changes performed_by on a finalized report', () => {
+    const finalized = setupFinalizedReport();
+    expect(() => ctx.db.prepare("UPDATE reports SET performed_by = 'Someone Else' WHERE id = ?").run(finalized.id)).toThrow(
+      /finalized and cannot be edited/i
+    );
+  });
+
   it('does NOT block normal edits to a DRAFT report', () => {
     const test = createTest(ctx.db, { name: 'CBC', short_code: 'CBC', parameters: [] });
     const patient = createPatient(ctx.db, { full_name: 'Draft Patient', age: 25, age_unit: 'Years', gender: 'Male' });
@@ -220,5 +227,32 @@ describe('listReports includes which tests were done (Patient Profile report lis
 
     const rows = listReports(ctx.db, { patient_id: patient.id });
     expect(rows[0].test_names).toBe('');
+  });
+});
+
+describe('the same test cannot be added twice to one report (backend-enforced, not just UI)', () => {
+  let ctx: ReturnType<typeof createTestDb>;
+  beforeEach(() => {
+    ctx = createTestDb();
+  });
+  afterEach(() => ctx.cleanup());
+
+  it('rejects createReport when the same test_id appears twice in the tests array', () => {
+    const test = createTest(ctx.db, { name: 'CBC', short_code: 'DUPTEST', price: 500, parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'Duplicate Test Patient', age: 30, age_unit: 'Years', gender: 'Male' });
+    expect(() =>
+      createReport(
+        ctx.db,
+        {
+          patient: { id: patient.id, full_name: patient.full_name, age: 30, age_unit: 'Years', gender: 'Male' },
+          doctor_id: null,
+          tests: [
+            { test_id: test.id, results: [] },
+            { test_id: test.id, results: [] },
+          ],
+        },
+        null
+      )
+    ).toThrow(/more than once/i);
   });
 });
