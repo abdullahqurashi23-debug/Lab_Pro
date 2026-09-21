@@ -23,6 +23,7 @@ import RouteErrorBoundary from './components/RouteErrorBoundary';
 import Login from './pages/Login';
 import ForceChangePassword from './pages/ForceChangePassword';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { ClinicProvider } from '@/lib/clinic-context';
 import { useIdleTimer } from '@/lib/useIdleTimer';
 import { api } from '@/lib/api';
 
@@ -49,21 +50,23 @@ function AppLayout() {
   }, [navigate, user]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBar />
-        <main className="flex-1 overflow-y-auto">
-          {/* Every page's own top-level element already brings its own p-8
-              — this only centers that content within a sane max width on
-              wide monitors, instead of letting it hug the left edge with a
-              growing dead zone of empty space on the right. */}
-          <div className="max-w-[1600px] mx-auto">
-            <Outlet />
-          </div>
-        </main>
+    <ClinicProvider>
+      <div className="flex h-screen w-screen overflow-hidden">
+        <Sidebar />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <TopBar />
+          <main className="flex-1 overflow-y-auto">
+            {/* Every page's own top-level element already brings its own p-8
+                — this only centers that content within a sane max width on
+                wide monitors, instead of letting it hug the left edge with a
+                growing dead zone of empty space on the right. */}
+            <div className="max-w-[1600px] mx-auto">
+              <Outlet />
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </ClinicProvider>
   );
 }
 

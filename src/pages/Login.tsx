@@ -48,7 +48,7 @@ export default function Login() {
             </div>
           )}
           <div>
-            <div className="text-lg font-bold text-foreground">{clinic?.clinic_name || 'LabPro'}</div>
+            <div className="text-lg font-bold text-foreground">{clinic?.clinic_name || 'LabCore'}</div>
             <div className="text-sm text-muted-foreground mt-1">Sign in to continue.</div>
           </div>
         </CardHeader>

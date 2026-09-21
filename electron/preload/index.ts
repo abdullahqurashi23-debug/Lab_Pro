@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
     create: (payload: unknown) => ipcRenderer.invoke('reports:create', payload),
     updateDraft: (reportId: number, payload: unknown) => ipcRenderer.invoke('reports:updateDraft', reportId, payload),
     finalize: (reportId: number) => ipcRenderer.invoke('reports:finalize', reportId),
+    retryArchive: (reportId: number) => ipcRenderer.invoke('reports:retryArchive', reportId),
     verifyPdf: () => ipcRenderer.invoke('reports:verifyPdf'),
     deleteDraft: (reportId: number) => ipcRenderer.invoke('reports:deleteDraft', reportId),
     getById: (reportId: number) => ipcRenderer.invoke('reports:getById', reportId),

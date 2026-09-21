@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -15,9 +15,9 @@ import {
   History,
   Printer,
 } from 'lucide-react';
-import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
+import { useClinic } from '@/lib/clinic-context';
 import type { Role } from '@/lib/types';
 
 interface NavLinkDef {
@@ -46,7 +46,7 @@ const COLLAPSE_KEY = 'labpro-sidebar-collapsed';
 
 export default function Sidebar() {
   const { user } = useAuth();
-  const [clinicName, setClinicName] = useState<string | null>(null);
+  const { clinicName } = useClinic();
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === '1';
@@ -54,10 +54,6 @@ export default function Sidebar() {
       return false;
     }
   });
-
-  useEffect(() => {
-    api.settings.get().then((s) => setClinicName(s.clinic_name));
-  }, []);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -87,7 +83,9 @@ export default function Sidebar() {
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold tracking-[0.15em] uppercase text-primary-foreground/55">LabPro</div>
+              <div className="text-[10px] font-semibold tracking-[0.15em] uppercase text-primary-foreground/55">
+                Laboratory System
+              </div>
               <div className="text-[15px] font-bold leading-snug break-words">{clinicName || 'Loading…'}</div>
             </div>
           )}

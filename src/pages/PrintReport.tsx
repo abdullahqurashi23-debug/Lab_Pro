@@ -108,6 +108,29 @@ export default function PrintReport() {
     }
   };
 
+  // A finalized report normally gets its permanent PDF copy archived
+  // automatically the moment it's finalized. If that step failed (a bad
+  // archive folder, a PDF render hiccup) the report is still correctly
+  // locked, but pdf_path stays empty — Open PDF/Open Folder would 404 with
+  // a raw "No saved PDF for this report yet." error otherwise. This lets
+  // the user fix the underlying cause (e.g. the archive folder in
+  // Settings) and try archiving again without needing to touch the report
+  // itself, which can no longer be re-finalized.
+  const [retrying, setRetrying] = useState(false);
+  const handleRetryArchive = async () => {
+    if (!report) return;
+    setRetrying(true);
+    try {
+      await api.reports.retryArchive(report.id);
+      await load();
+      toast.success('PDF copy saved.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save the PDF copy.');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   // Lets "Finalize & Print" on the New Report page (which already finalizes
   // before navigating here) land straight in the print dialog, instead of
   // requiring a second click.
@@ -202,6 +225,18 @@ export default function PrintReport() {
           )}
         </div>
       </div>
+
+      {!isDraft && !report.pdf_path && (
+        <div className="no-print bg-warning/10 border-b border-warning/30 px-8 py-3 flex items-center justify-between flex-wrap gap-3">
+          <p className="text-sm text-warning">
+            This report is locked, but its permanent PDF copy could not be saved automatically. Open PDF and Open
+            Folder won't work until this is fixed.
+          </p>
+          <Button size="sm" variant="outline" onClick={handleRetryArchive} disabled={retrying}>
+            {retrying ? 'Saving…' : 'Save PDF Copy'}
+          </Button>
+        </div>
+      )}
 
       <div className="max-w-3xl mx-auto bg-white my-8 p-10 shadow-sm print:shadow-none print:my-0" id="print-area">
         <PrintTemplateContent report={report} clinic={clinic} layout={layout} mode="pdf" showInlineHeaderFooterImages />

@@ -15,7 +15,7 @@ export interface ClinicSettings {
   footer_image_path: string;
   // Base folder for the permanent, hashed PDF copy written at finalize
   // time (see electron/reportArchive.ts) — empty string means "use the
-  // default (Documents/LabPro Reports)".
+  // default (Documents/LabCore Reports)".
   report_archive_folder: string;
   // Prepended to every generated report number (see generateReportNo in
   // reports.ts) — e.g. "LAB" -> "LAB-2026-000001".
@@ -24,7 +24,7 @@ export interface ClinicSettings {
   // and PDF modes (unlike header/footer, which are PDF-only).
   signature_image_path: string;
   // Base folder for automatic + manual database backups — empty string
-  // means "use the default (Documents/LabPro Backups)".
+  // means "use the default (Documents/LabCore Backups)".
   backup_folder: string;
 }
 

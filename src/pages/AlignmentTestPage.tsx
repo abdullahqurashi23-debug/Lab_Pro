@@ -89,7 +89,7 @@ export default function AlignmentTestPage() {
           </div>
           <div>Base font size: {layout.baseFontSizePt}pt</div>
           <div className="mt-3 text-xs text-neutral-500 max-w-xs mx-auto">
-            The border and ruler ticks above mark exactly where LabPro's printed content begins. Compare them against your
+            The border and ruler ticks above mark exactly where LabCore's printed content begins. Compare them against your
             letterhead's header/footer boundary and adjust the margins in Settings if they don't line up.
           </div>
         </div>

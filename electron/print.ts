@@ -62,7 +62,18 @@ async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFo
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'index.js'),
+      // print.ts compiles to dist-electron/electron/print.js — one level
+      // shallower than dist-electron/electron/main/index.js, which is why
+      // this can't reuse main/index.ts's `path.join(__dirname, '..',
+      // 'preload', ...)`. That extra '..' pointed one directory too high
+      // (dist-electron/preload/index.js, which doesn't exist) — Electron
+      // doesn't throw when a preload path is missing, it just silently
+      // never injects window.api into this hidden window, so every
+      // print-template page's data fetch failed with "window.api is
+      // missing" and the whole print/PDF/archive pipeline quietly did
+      // nothing. This affected every printed/PDF/archived output —
+      // patient reports, Revenue, Test Report, and the alignment test page.
+      preload: path.join(__dirname, 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

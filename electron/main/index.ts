@@ -86,7 +86,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 700,
-    title: 'LabPro',
+    title: 'LabCore',
     icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     backgroundColor: '#f8fafc',
     webPreferences: {
@@ -144,7 +144,7 @@ const AUTO_BACKUP_RETENTION = 30;
 const AUTO_BACKUP_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 function defaultBackupFolder(): string {
-  return path.join(app.getPath('documents'), 'LabPro Backups');
+  return path.join(app.getPath('documents'), 'LabCore Backups');
 }
 
 function backupFolder(): string {
@@ -190,7 +190,7 @@ app.whenReady().then(async () => {
     dialog.showMessageBoxSync({
       type: 'error',
       title: 'Database Integrity Check Failed',
-      message: 'LabPro detected a problem with its database file.',
+      message: 'LabCore detected a problem with its database file.',
       detail: `${integrity.details}\n\nGo to Settings > Backup & Restore to restore from a recent backup. Continuing without restoring may cause further errors or data loss.`,
       buttons: ['Continue Anyway'],
     });
@@ -518,33 +518,52 @@ handle('tests:delete', (_e, id) => {
 // ---------------------------------------------------------------
 
 function defaultArchiveFolder(): string {
-  return path.join(app.getPath('documents'), 'LabPro Reports');
+  return path.join(app.getPath('documents'), 'LabCore Reports');
 }
 
-// Finalizing is more than one DB write: (1) lock the report — status,
-// finalized_by/at, and the audit entry all in one transaction, handled by
-// reportsRepo.finalizeReport itself; then, once that's committed and
-// finalized_at is real, (2) render the permanent archive PDF (always
-// 'pdf' mode — this file is meant to stand on its own when shared, with
-// no physical letterhead behind it), (3) hash it, (4) write it to disk
-// under the configured (or default) archive folder, and (5) attach its
-// path+hash back onto the now-finalized row via the one narrow exception
-// the 004 migration's trigger allows.
-async function finalizeAndArchive(id: number, finalizedByUserId: number | null): Promise<ReportWithDetails> {
-  const finalized = reportsRepo.finalizeReport(db(), id, finalizedByUserId);
-
+// Renders the permanent archive PDF (always 'pdf' mode — this file is
+// meant to stand on its own when shared, with no physical letterhead
+// behind it), hashes it, writes it to disk under the configured (or
+// default) archive folder, and attaches its path+hash onto the report row
+// via the one narrow exception the 004 migration's trigger allows. Used
+// both right after finalize and, if that first attempt failed, by the
+// user-triggered retry below.
+async function archiveReportPdf(report: ReportWithDetails): Promise<void> {
   const layout = printSettingsRepo.getPrintLayout(db());
   const clinic = clinicSettingsRepo.getClinicSettings(db());
-  const pdfBuffer = await generateReportPdf(id, 'pdf', layout, {
+  const pdfBuffer = await generateReportPdf(report.id, 'pdf', layout, {
     headerImagePath: clinic.header_image_path,
     footerImagePath: clinic.footer_image_path,
   });
   const sha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-  const archivePath = buildArchivePath(clinic.report_archive_folder, defaultArchiveFolder(), finalized);
+  const archivePath = buildArchivePath(clinic.report_archive_folder, defaultArchiveFolder(), report);
   fs.mkdirSync(path.dirname(archivePath), { recursive: true });
   fs.writeFileSync(archivePath, pdfBuffer);
-  reportsRepo.setReportPdfInfo(db(), id, archivePath, sha256);
-  audit('ARCHIVE_PDF', 'report', id, { path: archivePath, sha256 });
+  reportsRepo.setReportPdfInfo(db(), report.id, archivePath, sha256);
+  audit('ARCHIVE_PDF', 'report', report.id, { path: archivePath, sha256 });
+}
+
+// Finalizing is more than one DB write: (1) lock the report — status,
+// finalized_by/at, and the audit entry all in one transaction, handled by
+// reportsRepo.finalizeReport itself; then, once that's committed, (2)
+// archive a permanent PDF copy. Step 2 is deliberately NOT allowed to undo
+// step 1 on failure — the report is correctly locked either way, and an
+// archive failure (bad folder permissions, a PDF render hiccup) is
+// recoverable via reports:retryArchive below, whereas un-finalizing a
+// report the user just confirmed locking would not be. Previously an
+// archive failure threw out of this function entirely: the renderer saw
+// "failed to finalize" and never navigated to the print screen, even
+// though the report was already permanently FINALIZED in the database —
+// confusing, and with no way to retry since re-finalizing an
+// already-finalized report is correctly rejected.
+async function finalizeAndArchive(id: number, finalizedByUserId: number | null): Promise<ReportWithDetails> {
+  const finalized = reportsRepo.finalizeReport(db(), id, finalizedByUserId);
+
+  try {
+    await archiveReportPdf(finalized);
+  } catch (err) {
+    audit('ARCHIVE_PDF_FAILED', 'report', id, { error: err instanceof Error ? err.message : String(err) });
+  }
 
   return reportsRepo.getReportById(db(), id) as ReportWithDetails;
 }
@@ -566,6 +585,15 @@ handle('reports:updateDraft', (_e, reportId, payload) => {
 handle('reports:finalize', async (_e, reportId) => {
   const user = requireRole('ADMIN', 'TECHNICIAN');
   return finalizeAndArchive(idSchema.parse(reportId), user.id);
+});
+handle('reports:retryArchive', async (_e, reportId) => {
+  requireRole('ADMIN', 'TECHNICIAN');
+  const id = idSchema.parse(reportId);
+  const report = reportsRepo.getReportById(db(), id);
+  if (!report) throw new Error('Report not found.');
+  if (report.status !== 'FINALIZED') throw new Error('Only a finalized report can be archived.');
+  await archiveReportPdf(report);
+  return reportsRepo.getReportById(db(), id) as ReportWithDetails;
 });
 handle('reports:verifyPdf', async () => {
   requireAdmin();

@@ -1,8 +1,8 @@
 {
   "name": "labpro",
   "version": "1.0.0",
-  "description": "LabPro — offline laboratory report management system",
-  "author": "LabPro",
+  "description": "LabCore — offline laboratory report management system",
+  "author": "LabCore",
   "main": "dist-electron/electron/main/index.js",
   "private": true,
   "type": "commonjs",
@@ -77,7 +77,7 @@
   },
   "build": {
     "appId": "com.labpro.app",
-    "productName": "LabPro",
+    "productName": "LabCore",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",

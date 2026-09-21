@@ -166,6 +166,7 @@ export interface LabProApi {
     create: (input: NewReportInput) => Promise<ReportWithDetails>;
     updateDraft: (reportId: number, input: NewReportInput) => Promise<ReportWithDetails>;
     finalize: (reportId: number) => Promise<ReportWithDetails>;
+    retryArchive: (reportId: number) => Promise<ReportWithDetails>;
     verifyPdf: () => Promise<VerifyPdfResult>;
     deleteDraft: (reportId: number) => Promise<{ deleted: boolean }>;
     getById: (reportId: number) => Promise<ReportWithDetails | null>;
