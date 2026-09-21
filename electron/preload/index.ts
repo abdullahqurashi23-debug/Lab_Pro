@@ -6,6 +6,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 // match src/vite-env.d.ts's LabProApi interface exactly.
 contextBridge.exposeInMainWorld('api', {
   auth: {
+    needsSetup: () => ipcRenderer.invoke('auth:needsSetup'),
+    createFirstAdmin: (username: string, password: string) =>
+      ipcRenderer.invoke('auth:createFirstAdmin', username, password),
     login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
     logout: (reason?: string) => ipcRenderer.invoke('auth:logout', reason),
     currentUser: () => ipcRenderer.invoke('auth:currentUser'),

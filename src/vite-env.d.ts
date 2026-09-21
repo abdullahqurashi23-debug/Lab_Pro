@@ -115,6 +115,8 @@ export interface NewPaymentInput {
 
 export interface LabProApi {
   auth: {
+    needsSetup: () => Promise<boolean>;
+    createFirstAdmin: (username: string, password: string) => Promise<LoginResult>;
     login: (username: string, password: string) => Promise<LoginResult>;
     logout: (reason?: string) => Promise<void>;
     currentUser: () => Promise<PublicUser | null>;

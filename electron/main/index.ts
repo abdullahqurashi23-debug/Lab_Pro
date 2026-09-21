@@ -47,6 +47,7 @@ import {
   auditLogFiltersSchema,
   searchQuerySchema,
   passwordSchema,
+  usernameSchema,
   idSchema,
 } from '../../src/db/validation';
 import { buildTestCatalogWorkbook, parseTestCatalogWorkbook, buildReportsWorkbook, buildRevenueWorkbook } from '../../src/db/excel';
@@ -272,6 +273,47 @@ function handle<T>(channel: string, fn: (event: Electron.IpcMainInvokeEvent, ...
 // ---------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------
+
+// Whether this install has never had an admin account created yet — the
+// renderer uses this to decide between showing the normal Login screen
+// and the one-time "set up your admin account" screen. Deliberately not
+// gated behind requireAuth: there's no session yet to require.
+handle('auth:needsSetup', () => {
+  return !usersRepo.hasAnyUsers(db());
+});
+
+// Lets whoever is physically installing LabCore set the very first admin
+// password themselves — on the spot, known only to them — instead of the
+// app seeding a fixed or auto-generated password that would sit in the
+// database (and, previously, a plaintext file) before they've typed
+// anything in. Guarded by the same hasAnyUsers() check as the "needs
+// setup" screen itself: once ANY user exists, this handler refuses to run
+// again, so it can never be used to slip in a second, unauthorized admin
+// account later.
+handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string) => {
+  if (usersRepo.hasAnyUsers(db())) {
+    throw new Error('Setup has already been completed on this install.');
+  }
+  const parsedUsername = usernameSchema.safeParse(rawUsername);
+  if (!parsedUsername.success) {
+    throw new Error(parsedUsername.error.errors.map((e) => e.message).join('; '));
+  }
+  const parsedPassword = passwordSchema.safeParse(rawPassword);
+  if (!parsedPassword.success) {
+    throw new Error(parsedPassword.error.errors.map((e) => e.message).join('; '));
+  }
+  const user = usersRepo.createUser(db(), {
+    username: parsedUsername.data,
+    password_hash: bcrypt.hashSync(parsedPassword.data, 10),
+    full_name: 'Administrator',
+    role: 'ADMIN',
+    must_change_password: true,
+  });
+  currentUser = user;
+  audit('CREATE', 'user', user.id, { username: user.username, initial_setup: true });
+  audit('LOGIN', 'user', user.id);
+  return { ok: true, user, mustChangePassword: true };
+});
 
 handle('auth:login', (_e, rawUsername: string, rawPassword: string) => {
   // Deliberately not zod-validated here: even a malformed/too-short

@@ -1,35 +1,19 @@
-// Seeds a fresh database with: the default admin account, 10 test
-// categories, and 50 common tests (with parameters, units, and reference
-// ranges). Safe to run more than once — everything is skip-if-exists.
+// Seeds a fresh database with 10 test categories and 50 common tests
+// (with parameters, units, and reference ranges). Safe to run more than
+// once — everything is skip-if-exists. Does NOT create an admin account —
+// that no longer happens automatically with a fixed or generated password
+// (either one is a secret sitting on the lab's own machine before whoever
+// is installing has typed anything in). Instead, the app's first-run
+// screen (see src/pages/FirstRunSetup.tsx / the auth:createFirstAdmin IPC
+// handler) has the installer set the initial admin password themselves,
+// on the spot, and must_change_password still forces a real password to
+// replace it immediately after.
 
-import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { getDb } from './db';
 import { createCategory, listCategories } from './repositories/testCategories';
 import { createTest, listTests } from './repositories/tests';
-import { createUser, hasAnyUsers } from './repositories/users';
 import { CATEGORIES, TESTS, type SeedParam } from './seedData';
 import type { NewTestParameter } from './repositories/types';
-
-// A fixed "admin123" default (the previous behavior) is guessable and,
-// worse, identical across every single LabCore install ever seeded from
-// this same source — one leaked or guessed password would work on every
-// lab's install everywhere. This generates a unique, high-entropy
-// password per install instead (~80 bits from a 54-character alphabet,
-// no visually-ambiguous characters like 0/O/1/l/I since it has to be
-// typed once by hand), and only that one plaintext copy is ever written
-// to disk, right next to the database, purely so the person setting up
-// this specific install can find it — must_change_password (already set
-// below) forces a real password to replace it on first login regardless.
-const PASSWORD_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-function generateStrongPassword(length = 14): string {
-  const bytes = crypto.randomBytes(length);
-  let out = '';
-  for (let i = 0; i < length; i++) out += PASSWORD_CHARS[bytes[i] % PASSWORD_CHARS.length];
-  return out;
-}
 
 // Derives a formula-friendly code from a parameter name when the seed data
 // doesn't set one explicitly (multi-word -> initials, single word -> first
@@ -76,24 +60,10 @@ function toNewParameter(p: SeedParam, index: number, usedCodes: Set<string>): Ne
 
 export function seed(userDataPath?: string) {
   const db = getDb(userDataPath);
-  let usersCreated = 0;
   let categoriesCreated = 0;
   let testsCreated = 0;
-  let generatedPassword: string | null = null;
 
   const seedTxn = db.transaction(() => {
-    if (!hasAnyUsers(db)) {
-      generatedPassword = generateStrongPassword();
-      createUser(db, {
-        username: 'admin',
-        password_hash: bcrypt.hashSync(generatedPassword, 10),
-        full_name: 'Administrator',
-        role: 'ADMIN',
-        must_change_password: true,
-      });
-      usersCreated = 1;
-    }
-
     const existingCategories = new Map(listCategories(db).map((c) => [c.name.toLowerCase(), c]));
     for (const name of CATEGORIES) {
       if (!existingCategories.has(name.toLowerCase())) {
@@ -126,28 +96,11 @@ export function seed(userDataPath?: string) {
 
   seedTxn();
 
-  if (generatedPassword) {
-    const dataDir = userDataPath || path.join(__dirname, '..', '..', '..', 'data');
-    const readmePath = path.join(dataDir, 'ADMIN-PASSWORD.txt');
-    fs.writeFileSync(
-      readmePath,
-      `LabCore — first-time admin login\n\n` +
-        `Username: admin\n` +
-        `Password: ${generatedPassword}\n\n` +
-        `This password is unique to this install (a different one is generated every time\n` +
-        `LabCore is set up on a new computer) — it is not the same for every install.\n` +
-        `You'll be asked to set your own password immediately after logging in with it once.\n\n` +
-        `Delete this file after you've logged in and set your own password.\n`
-    );
-  }
-
   return {
-    usersCreated,
     categoriesCreated,
     testsCreated,
     totalCategories: CATEGORIES.length,
     totalTests: TESTS.length,
-    generatedPassword,
   };
 }
 
@@ -155,9 +108,6 @@ export function seed(userDataPath?: string) {
 if (require.main === module) {
   const result = seed();
   console.log(
-    `Seed complete. Admin user created: ${result.usersCreated > 0}. Categories: ${result.categoriesCreated} new (of ${result.totalCategories}). Tests: ${result.testsCreated} new (of ${result.totalTests}).`
+    `Seed complete. Categories: ${result.categoriesCreated} new (of ${result.totalCategories}). Tests: ${result.testsCreated} new (of ${result.totalTests}).`
   );
-  if (result.generatedPassword) {
-    console.log(`Admin login — username: admin, password: ${result.generatedPassword} (also saved to data/ADMIN-PASSWORD.txt)`);
-  }
 }

@@ -22,6 +22,7 @@ import TestReportPrintTemplate from './pages/TestReportPrintTemplate';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import Login from './pages/Login';
 import ForceChangePassword from './pages/ForceChangePassword';
+import FirstRunSetup from './pages/FirstRunSetup';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ClinicProvider } from '@/lib/clinic-context';
 import { useIdleTimer } from '@/lib/useIdleTimer';
@@ -102,6 +103,10 @@ function Gate() {
         Loading…
       </div>
     );
+  }
+
+  if (phase === 'needs-setup') {
+    return <FirstRunSetup />;
   }
 
   if (phase === 'locked') {

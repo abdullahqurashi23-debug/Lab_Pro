@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { api } from '@/lib/api';
 import type { PublicUser } from '@/lib/types';
 
-type AuthPhase = 'checking' | 'locked' | 'must-change-password' | 'unlocked';
+type AuthPhase = 'checking' | 'needs-setup' | 'locked' | 'must-change-password' | 'unlocked';
 
 interface LoginOutcome {
   ok: boolean;
@@ -12,6 +12,7 @@ interface LoginOutcome {
 interface AuthContextValue {
   phase: AuthPhase;
   user: PublicUser | null;
+  createFirstAdmin: (username: string, password: string) => Promise<LoginOutcome>;
   login: (username: string, password: string) => Promise<LoginOutcome>;
   completePasswordChange: () => void;
   logout: (reason?: string) => void;
@@ -26,18 +27,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // The main process holds the session in memory, so a fresh app launch
     // always starts logged out — this is a deliberate screen-lock-style
-    // behavior, not a bug: every launch requires a real sign-in.
+    // behavior, not a bug: every launch requires a real sign-in. A brand
+    // new install with no admin account yet takes priority over that: it
+    // goes to the one-time setup screen instead of a login form for an
+    // account that doesn't exist.
     api.auth
-      .currentUser()
-      .then((current) => {
-        if (current) {
-          setUser(current);
-          setPhase('unlocked');
-        } else {
-          setPhase('locked');
+      .needsSetup()
+      .then((needsSetup) => {
+        if (needsSetup) {
+          setPhase('needs-setup');
+          return;
         }
+        return api.auth.currentUser().then((current) => {
+          if (current) {
+            setUser(current);
+            setPhase('unlocked');
+          } else {
+            setPhase('locked');
+          }
+        });
       })
       .catch(() => setPhase('locked'));
+  }, []);
+
+  const createFirstAdmin = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
+    const result = await api.auth.createFirstAdmin(username, password);
+    if (!result.ok || !result.user) {
+      return { ok: false, error: result.error || 'Failed to create the admin account.' };
+    }
+    setUser(result.user);
+    setPhase(result.mustChangePassword ? 'must-change-password' : 'unlocked');
+    return { ok: true };
   }, []);
 
   const login = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
@@ -60,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPhase('locked');
   }, []);
 
-  const value: AuthContextValue = { phase, user, login, completePasswordChange, logout };
+  const value: AuthContextValue = { phase, user, createFirstAdmin, login, completePasswordChange, logout };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
