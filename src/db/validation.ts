@@ -60,10 +60,12 @@ export const usernameSchema = z.string().trim().min(2, 'Username is required').m
 export const passwordSchema = z.string().min(4, 'Password must be at least 4 characters').max(200);
 export const roleSchema = z.enum(['ADMIN', 'TECHNICIAN', 'RECEPTION']);
 
+export const fullNameSchema = z.string().trim().min(1, 'Full name is required').max(200);
+
 export const createUserSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
-  full_name: z.string().trim().min(1, 'Full name is required').max(200),
+  full_name: fullNameSchema,
   role: roleSchema,
 });
 

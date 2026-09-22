@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
 import type { ClinicSettings, RevenueGranularity, TestReportResult } from '@/lib/types';
 
 // Rendered only inside a hidden BrowserWindow for the Test Report page's
@@ -38,13 +39,13 @@ export default function TestReportPrintTemplate() {
         const [r, c] = await Promise.all([api.testReport.period({ granularity, from, to }), api.settings.get()]);
         if (cancelled) return;
         if (!r) {
-          document.body.setAttribute('data-print-ready', 'error');
+          markPrintError();
           return;
         }
         setReport(r);
         setClinic(c);
       } catch {
-        if (!cancelled) document.body.setAttribute('data-print-ready', 'error');
+        if (!cancelled) markPrintError();
       }
     })();
     return () => {
@@ -54,8 +55,13 @@ export default function TestReportPrintTemplate() {
 
   useEffect(() => {
     if (!report) return;
-    const raf = requestAnimationFrame(() => document.body.setAttribute('data-print-ready', 'true'));
-    return () => cancelAnimationFrame(raf);
+    let cancelled = false;
+    waitForFontsAndPaint().then(() => {
+      if (!cancelled) markPrintReady();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [report]);
 
   if (!report || !clinic) return null;

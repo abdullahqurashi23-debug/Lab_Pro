@@ -165,7 +165,13 @@ export default function Revenue() {
     setExporting('print');
     try {
       const result = await api.revenue.print(filters);
-      if (result.success) toast.success('Sent to printer.');
+      if (result.success) {
+        if (result.fellBackToPdf) {
+          toast.warning(`Direct printing failed (${result.error}). Opened the PDF instead — print it from there.`);
+        } else {
+          toast.success('Sent to printer.');
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to print.');
     } finally {

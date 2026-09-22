@@ -34,7 +34,11 @@ export default function FirstRunSetup() {
     }
     setSaving(true);
     try {
-      const result = await createFirstAdmin(username, password);
+      // This account is retired the moment the lab sets up their own (see
+      // LabAccountSetup) — "Installer" as its full name is only there so
+      // it reads clearly in the Audit Log/Users list, not something worth
+      // asking the installer to type in for an account this short-lived.
+      const result = await createFirstAdmin(username, password, 'Installer');
       if (!result.ok) {
         setError(result.error || 'Failed to create the admin account.');
       }

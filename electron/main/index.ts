@@ -50,6 +50,7 @@ import {
   searchQuerySchema,
   passwordSchema,
   usernameSchema,
+  fullNameSchema,
   idSchema,
 } from '../../src/db/validation';
 import { buildTestCatalogWorkbook, parseTestCatalogWorkbook, buildReportsWorkbook, buildRevenueWorkbook } from '../../src/db/excel';
@@ -295,7 +296,7 @@ handle('auth:needsSetup', () => {
 // past the empty-database gate and immediately hand off to
 // auth:createLabAccount below — once the lab's own account exists, this
 // one is deactivated and can never log in again.
-handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string) => {
+handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string, rawFullName: string) => {
   if (usersRepo.hasAnyUsers(db())) {
     throw new Error('Setup has already been completed on this install.');
   }
@@ -307,10 +308,14 @@ handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string) =
   if (!parsedPassword.success) {
     throw new Error(parsedPassword.error.errors.map((e) => e.message).join('; '));
   }
+  const parsedFullName = fullNameSchema.safeParse(rawFullName);
+  if (!parsedFullName.success) {
+    throw new Error(parsedFullName.error.errors.map((e) => e.message).join('; '));
+  }
   const user = usersRepo.createUser(db(), {
     username: parsedUsername.data,
     password_hash: bcrypt.hashSync(parsedPassword.data, 10),
-    full_name: 'Administrator',
+    full_name: parsedFullName.data,
     role: 'ADMIN',
     is_provisional: true,
   });
@@ -327,7 +332,7 @@ handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string) =
 // on the SAME account), and the provisional account is deactivated in the
 // same breath, so from this point on only the lab's own credentials can
 // ever log in — not the ones used to install it.
-handle('auth:createLabAccount', (_e, rawUsername: string, rawPassword: string) => {
+handle('auth:createLabAccount', (_e, rawUsername: string, rawPassword: string, rawFullName: string) => {
   const caller = requireAuth();
   const callerRow = usersRepo.getUserById(db(), caller.id);
   if (!callerRow || !callerRow.is_provisional || !callerRow.is_active) {
@@ -341,10 +346,14 @@ handle('auth:createLabAccount', (_e, rawUsername: string, rawPassword: string) =
   if (!parsedPassword.success) {
     throw new Error(parsedPassword.error.errors.map((e) => e.message).join('; '));
   }
+  const parsedFullName = fullNameSchema.safeParse(rawFullName);
+  if (!parsedFullName.success) {
+    throw new Error(parsedFullName.error.errors.map((e) => e.message).join('; '));
+  }
   const labUser = usersRepo.createUser(db(), {
     username: parsedUsername.data,
     password_hash: bcrypt.hashSync(parsedPassword.data, 10),
-    full_name: 'Administrator',
+    full_name: parsedFullName.data,
     role: 'ADMIN',
   });
   usersRepo.updateUser(db(), callerRow.id, { is_active: 0 });
@@ -776,14 +785,44 @@ handle('revenue:exportExcel', async (_e, filters) => {
   audit('EXPORT_EXCEL', 'revenue', null, { path: result.filePath, ...parsed });
   return { success: true, path: result.filePath };
 });
+// Printing must never be a complete dead end. If the direct print genuinely
+// fails or times out (disconnected printer, stuck driver, a spooler that
+// never calls back), this hands the user a real PDF file — opened
+// immediately in whatever the OS's default PDF viewer is — instead of just
+// reporting failure with no path forward.
+async function printWithFallback(
+  pdfBuffer: Buffer,
+  fallbackFileName: string
+): Promise<{ success: boolean; fellBackToPdf?: boolean; path?: string; error?: string }> {
+  try {
+    await printPdfBuffer(pdfBuffer);
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      const fallbackDir = path.join(getUserDataPath(), 'print-fallback');
+      fs.mkdirSync(fallbackDir, { recursive: true });
+      const fallbackPath = path.join(fallbackDir, fallbackFileName);
+      fs.writeFileSync(fallbackPath, pdfBuffer);
+      const openError = await shell.openPath(fallbackPath);
+      if (openError) throw new Error(openError);
+      return { success: true, fellBackToPdf: true, path: fallbackPath, error: message };
+    } catch (fallbackErr) {
+      const fallbackMessage = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      return { success: false, error: `Printing failed (${message}) and the PDF fallback also failed (${fallbackMessage}).` };
+    }
+  }
+}
+
 handle('revenue:print', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
   const parsed = revenuePeriodFiltersSchema.parse(filters);
   const layout = printSettingsRepo.getPrintLayout(db());
   const pdfBuffer = await generateRevenuePdf(parsed, layout);
-  await printPdfBuffer(pdfBuffer);
-  audit('PRINT', 'revenue', null, parsed);
-  return { success: true };
+  const result = await printWithFallback(pdfBuffer, `revenue-${parsed.granularity}-${Date.now()}.pdf`);
+  if (!result.success) throw new Error(result.error);
+  audit('PRINT', 'revenue', null, { ...parsed, fellBackToPdf: !!result.fellBackToPdf });
+  return result;
 });
 handle('revenue:exportPdf', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
@@ -811,9 +850,10 @@ handle('testreport:print', async (_e, filters) => {
   const parsed = revenuePeriodFiltersSchema.parse(filters);
   const layout = printSettingsRepo.getPrintLayout(db());
   const pdfBuffer = await generateTestReportPdf(parsed, layout);
-  await printPdfBuffer(pdfBuffer);
-  audit('PRINT', 'test_report', null, parsed);
-  return { success: true };
+  const result = await printWithFallback(pdfBuffer, `test-report-${parsed.granularity}-${Date.now()}.pdf`);
+  if (!result.success) throw new Error(result.error);
+  audit('PRINT', 'test_report', null, { ...parsed, fellBackToPdf: !!result.fellBackToPdf });
+  return result;
 });
 handle('testreport:exportPdf', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
@@ -1003,8 +1043,9 @@ handle('print:report', async (_e, reportId, mode) => {
   // copy has the digital header/footer images baked into the margins,
   // which would print on top of physical letterhead — so it's always
   // freshly rendered with blank margins instead.
+  let result: { success: boolean; fellBackToPdf?: boolean; path?: string; error?: string };
   if (printMode === 'pdf' && report.pdf_path && fs.existsSync(report.pdf_path)) {
-    await printPdfBuffer(fs.readFileSync(report.pdf_path));
+    result = await printWithFallback(fs.readFileSync(report.pdf_path), `${report.report_no}-${Date.now()}.pdf`);
   } else {
     const layout = printSettingsRepo.getPrintLayout(db());
     const clinic = clinicSettingsRepo.getClinicSettings(db());
@@ -1012,10 +1053,11 @@ handle('print:report', async (_e, reportId, mode) => {
       headerImagePath: clinic.header_image_path,
       footerImagePath: clinic.footer_image_path,
     });
-    await printPdfBuffer(pdfBuffer);
+    result = await printWithFallback(pdfBuffer, `${report.report_no}-${Date.now()}.pdf`);
   }
-  audit('PRINT', 'report', id, { mode: printMode });
-  return { success: true };
+  if (!result.success) throw new Error(result.error);
+  audit('PRINT', 'report', id, { mode: printMode, fellBackToPdf: !!result.fellBackToPdf });
+  return result;
 });
 
 handle('print:openPdf', async (_e, reportId) => {
@@ -1079,8 +1121,9 @@ handle('print:testPage', async () => {
   requireAdmin();
   const layout = printSettingsRepo.getPrintLayout(db());
   const pdfBuffer = await generateAlignmentTestPage(layout);
-  await printPdfBuffer(pdfBuffer);
-  return { success: true };
+  const result = await printWithFallback(pdfBuffer, `alignment-test-${Date.now()}.pdf`);
+  if (!result.success) throw new Error(result.error);
+  return result;
 });
 
 // ---------------------------------------------------------------

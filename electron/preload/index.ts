@@ -7,10 +7,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('api', {
   auth: {
     needsSetup: () => ipcRenderer.invoke('auth:needsSetup'),
-    createFirstAdmin: (username: string, password: string) =>
-      ipcRenderer.invoke('auth:createFirstAdmin', username, password),
-    createLabAccount: (username: string, password: string) =>
-      ipcRenderer.invoke('auth:createLabAccount', username, password),
+    createFirstAdmin: (username: string, password: string, fullName: string) =>
+      ipcRenderer.invoke('auth:createFirstAdmin', username, password, fullName),
+    createLabAccount: (username: string, password: string, fullName: string) =>
+      ipcRenderer.invoke('auth:createLabAccount', username, password, fullName),
     login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
     logout: (reason?: string) => ipcRenderer.invoke('auth:logout', reason),
     currentUser: () => ipcRenderer.invoke('auth:currentUser'),

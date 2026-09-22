@@ -58,6 +58,13 @@ export interface OkResult {
   error?: string;
 }
 
+export interface PrintResult {
+  success: boolean;
+  fellBackToPdf?: boolean;
+  path?: string;
+  error?: string;
+}
+
 export interface VerifyPdfResult {
   success: boolean;
   canceled?: boolean;
@@ -122,8 +129,8 @@ export interface NewPaymentInput {
 export interface LabProApi {
   auth: {
     needsSetup: () => Promise<boolean>;
-    createFirstAdmin: (username: string, password: string) => Promise<LoginResult>;
-    createLabAccount: (username: string, password: string) => Promise<LoginResult>;
+    createFirstAdmin: (username: string, password: string, fullName: string) => Promise<LoginResult>;
+    createLabAccount: (username: string, password: string, fullName: string) => Promise<LoginResult>;
     login: (username: string, password: string) => Promise<LoginResult>;
     logout: (reason?: string) => Promise<void>;
     currentUser: () => Promise<PublicUser | null>;
@@ -195,13 +202,13 @@ export interface LabProApi {
   revenue: {
     period: (filters: RevenuePeriodFilters) => Promise<RevenuePeriodReport>;
     outstandingBalances: () => Promise<OutstandingBalanceRow[]>;
-    print: (filters: RevenuePeriodFilters) => Promise<{ success: boolean }>;
+    print: (filters: RevenuePeriodFilters) => Promise<PrintResult>;
     exportExcel: (filters: RevenuePeriodFilters) => Promise<FileOpResult>;
     exportPdf: (filters: RevenuePeriodFilters) => Promise<FileOpResult>;
   };
   testReport: {
     period: (filters: TestReportFilters) => Promise<TestReportResult>;
-    print: (filters: TestReportFilters) => Promise<{ success: boolean }>;
+    print: (filters: TestReportFilters) => Promise<PrintResult>;
     exportPdf: (filters: TestReportFilters) => Promise<FileOpResult>;
   };
   payments: {
@@ -233,9 +240,9 @@ export interface LabProApi {
     healthCheck: () => Promise<IntegrityCheckResult>;
   };
   print: {
-    report: (reportId: number, mode: 'paper' | 'pdf') => Promise<{ success: boolean }>;
+    report: (reportId: number, mode: 'paper' | 'pdf') => Promise<PrintResult>;
     savePdf: (reportId: number) => Promise<FileOpResult>;
-    testPage: () => Promise<{ success: boolean }>;
+    testPage: () => Promise<PrintResult>;
     openPdf: (reportId: number) => Promise<{ success: boolean }>;
     openFolder: (reportId: number) => Promise<{ success: boolean }>;
   };

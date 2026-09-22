@@ -18,6 +18,21 @@ import { mmToPt, type PrintLayout } from '../src/db/printLayout';
 const isDev = process.env.NODE_ENV === 'development';
 const PX_PER_MM = 96 / 25.4; // printToPDF's custom margins are in CSS pixels (96px = 1in)
 
+// Neither printToPDF() nor webContents.print() come with a built-in
+// timeout — if either one never calls back (a bad printer driver, a stuck
+// print spooler, or any of the handful of open Electron/Chromium issues
+// where printToPDF stalls on some machines), the whole operation hangs
+// forever with the renderer's "Printing…"/"Saving…" button spinning and no
+// error ever shown. This wraps any such promise so a hang becomes a clear,
+// bounded failure instead of an invisible freeze.
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 function mmToPx(mm: number): number {
   return Math.round(mm * PX_PER_MM);
 }
@@ -89,21 +104,30 @@ async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFo
   try {
     await win.loadURL(templateUrl(hashPath));
     await waitForPrintReady(win);
-    const buffer = await win.webContents.printToPDF({
-      pageSize: layout.paperSize,
-      printBackground: true,
-      preferCSSPageSize: false,
-      displayHeaderFooter: !!headerFooterHtml,
-      headerTemplate: headerFooterHtml?.header || '<span></span>',
-      footerTemplate: headerFooterHtml?.footer || '<span></span>',
-      margins: {
-        marginType: 'custom',
-        top: mmToPx(layout.topMarginMm),
-        bottom: mmToPx(layout.bottomMarginMm),
-        left: mmToPx(layout.leftMarginMm),
-        right: mmToPx(layout.rightMarginMm),
-      },
-    });
+    // printToPDF() has no built-in timeout of its own — on some machines
+    // (bad GPU/print-driver state, a stuck spooler) it simply never
+    // resolves. Without this, that hang is invisible: the renderer's
+    // button just spins forever with no error. 30s is generous for even a
+    // large multi-page report on a slow machine.
+    const buffer = await withTimeout(
+      win.webContents.printToPDF({
+        pageSize: layout.paperSize,
+        printBackground: true,
+        preferCSSPageSize: false,
+        displayHeaderFooter: !!headerFooterHtml,
+        headerTemplate: headerFooterHtml?.header || '<span></span>',
+        footerTemplate: headerFooterHtml?.footer || '<span></span>',
+        margins: {
+          marginType: 'custom',
+          top: mmToPx(layout.topMarginMm),
+          bottom: mmToPx(layout.bottomMarginMm),
+          left: mmToPx(layout.leftMarginMm),
+          right: mmToPx(layout.rightMarginMm),
+        },
+      }),
+      30000,
+      'Generating the PDF timed out after 30 seconds.'
+    );
     return Buffer.from(buffer);
   } finally {
     win.destroy();
@@ -210,18 +234,27 @@ export async function printPdfBuffer(pdfBuffer: Buffer): Promise<void> {
     // printer configured, driver error, etc.) nor a successful print was
     // ever actually detected — the app always reported "sent to printer"
     // no matter what. The real completion signal is the callback argument.
-    await new Promise<void>((resolve, reject) => {
-      win.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
-        // A user clicking "Cancel" in the OS print dialog reports
-        // success:false with a reason like "cancelled" — that's a normal,
-        // expected action, not an error worth surfacing as a failure toast.
-        if (success || /cancel/i.test(failureReason)) {
-          resolve();
-        } else {
-          reject(new Error(failureReason || 'Printing failed — check that a printer is connected and set up.'));
-        }
-      });
-    });
+    //
+    // Also wrapped in withTimeout: this callback is not guaranteed to ever
+    // fire on every machine/driver combination — without a bound, that
+    // failure mode is an invisible, permanent freeze instead of a message
+    // the user can act on.
+    await withTimeout(
+      new Promise<void>((resolve, reject) => {
+        win.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
+          // A user clicking "Cancel" in the OS print dialog reports
+          // success:false with a reason like "cancelled" — that's a normal,
+          // expected action, not an error worth surfacing as a failure toast.
+          if (success || /cancel/i.test(failureReason)) {
+            resolve();
+          } else {
+            reject(new Error(failureReason || 'Printing failed — check that a printer is connected and set up.'));
+          }
+        });
+      }),
+      30000,
+      'Printing timed out after 30 seconds — check that the printer is connected and try again.'
+    );
   } finally {
     win.destroy();
     fs.unlink(tempPath, () => {});

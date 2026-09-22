@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
 import type { ClinicSettings, RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
 
 // Rendered only inside a hidden BrowserWindow for the Revenue page's
@@ -66,14 +67,14 @@ export default function RevenuePrintTemplate() {
         ]);
         if (cancelled) return;
         if (!r) {
-          document.body.setAttribute('data-print-ready', 'error');
+          markPrintError();
           return;
         }
         setReport(r);
         setOutstanding(o ?? []);
         setClinic(c);
       } catch {
-        if (!cancelled) document.body.setAttribute('data-print-ready', 'error');
+        if (!cancelled) markPrintError();
       }
     })();
     return () => {
@@ -83,8 +84,13 @@ export default function RevenuePrintTemplate() {
 
   useEffect(() => {
     if (!report) return;
-    const raf = requestAnimationFrame(() => document.body.setAttribute('data-print-ready', 'true'));
-    return () => cancelAnimationFrame(raf);
+    let cancelled = false;
+    waitForFontsAndPaint().then(() => {
+      if (!cancelled) markPrintReady();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [report]);
 
   if (!report || !clinic) return null;

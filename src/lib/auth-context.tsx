@@ -12,8 +12,8 @@ interface LoginOutcome {
 interface AuthContextValue {
   phase: AuthPhase;
   user: PublicUser | null;
-  createFirstAdmin: (username: string, password: string) => Promise<LoginOutcome>;
-  createLabAccount: (username: string, password: string) => Promise<LoginOutcome>;
+  createFirstAdmin: (username: string, password: string, fullName: string) => Promise<LoginOutcome>;
+  createLabAccount: (username: string, password: string, fullName: string) => Promise<LoginOutcome>;
   login: (username: string, password: string) => Promise<LoginOutcome>;
   completePasswordChange: () => void;
   logout: (reason?: string) => void;
@@ -51,8 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setPhase('locked'));
   }, []);
 
-  const createFirstAdmin = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
-    const result = await api.auth.createFirstAdmin(username, password);
+  const createFirstAdmin = useCallback(async (username: string, password: string, fullName: string): Promise<LoginOutcome> => {
+    const result = await api.auth.createFirstAdmin(username, password, fullName);
     if (!result.ok || !result.user) {
       return { ok: false, error: result.error || 'Failed to create the admin account.' };
     }
@@ -61,8 +61,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }, []);
 
-  const createLabAccount = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
-    const result = await api.auth.createLabAccount(username, password);
+  const createLabAccount = useCallback(async (username: string, password: string, fullName: string): Promise<LoginOutcome> => {
+    const result = await api.auth.createLabAccount(username, password, fullName);
     if (!result.ok || !result.user) {
       return { ok: false, error: result.error || 'Failed to create the lab account.' };
     }

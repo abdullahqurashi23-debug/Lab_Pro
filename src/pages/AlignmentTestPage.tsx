@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { mergePrintLayout, PAPER_SIZES_MM, type PrintLayout } from '@/db/printLayout';
+import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
 
 // Rendered only inside a hidden BrowserWindow for the Settings > Print
 // Layout "Print Test Page" button. printToPDF already excludes the
@@ -51,7 +52,7 @@ export default function AlignmentTestPage() {
         setLayout(mergePrintLayout(raw));
       })
       .catch(() => {
-        if (!cancelled) document.body.setAttribute('data-print-ready', 'error');
+        if (!cancelled) markPrintError();
       });
     return () => {
       cancelled = true;
@@ -60,8 +61,13 @@ export default function AlignmentTestPage() {
 
   useEffect(() => {
     if (!layout) return;
-    const raf = requestAnimationFrame(() => document.body.setAttribute('data-print-ready', 'true'));
-    return () => cancelAnimationFrame(raf);
+    let cancelled = false;
+    waitForFontsAndPaint().then(() => {
+      if (!cancelled) markPrintReady();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [layout]);
 
   if (!layout) return null;
@@ -82,6 +88,7 @@ export default function AlignmentTestPage() {
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="text-center text-sm leading-relaxed">
           <div className="text-base font-bold mb-2">Print Alignment Test Page</div>
+          <div>Date: {new Date().toLocaleDateString()}</div>
           <div>Paper size: {layout.paperSize}</div>
           <div>
             Margins (mm) — Top: {layout.topMarginMm}, Bottom: {layout.bottomMarginMm}, Left: {layout.leftMarginMm}, Right:{' '}

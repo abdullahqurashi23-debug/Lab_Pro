@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 // the software.
 export default function LabAccountSetup() {
   const { createLabAccount } = useAuth();
+  const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -22,6 +23,10 @@ export default function LabAccountSetup() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!fullName.trim()) {
+      setError('Full name is required.');
+      return;
+    }
     if (password.length < 4) {
       setError('Password must be at least 4 characters.');
       return;
@@ -32,7 +37,7 @@ export default function LabAccountSetup() {
     }
     setSaving(true);
     try {
-      const result = await createLabAccount(username, password);
+      const result = await createLabAccount(username, password, fullName);
       if (!result.ok) {
         setError(result.error || 'Failed to create the account.');
       }
@@ -59,8 +64,12 @@ export default function LabAccountSetup() {
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1.5">
+              <Label htmlFor="fullName">Your Name</Label>
+              <Input id="fullName" autoFocus autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="username">Username</Label>
-              <Input id="username" autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+              <Input id="username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
@@ -83,7 +92,7 @@ export default function LabAccountSetup() {
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={saving || !username || !password}>
+            <Button type="submit" className="w-full" disabled={saving || !fullName || !username || !password}>
               {saving ? 'Saving…' : 'Finish Setup'}
             </Button>
           </form>

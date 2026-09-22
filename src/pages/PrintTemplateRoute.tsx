@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
 import PrintTemplateContent from '@/components/print/PrintTemplateContent';
 import { mergePrintLayout, type PrintLayout } from '@/db/printLayout';
+import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
 import type { ClinicSettings, ReportWithDetails } from '@/lib/types';
 
 interface LoadedData {
@@ -37,12 +38,12 @@ export default function PrintTemplateRoute() {
         ]);
         if (cancelled) return;
         if (!report) {
-          document.body.setAttribute('data-print-ready', 'error');
+          markPrintError();
           return;
         }
         setData({ report, clinic, layout: mergePrintLayout(rawLayout) });
       } catch {
-        if (!cancelled) document.body.setAttribute('data-print-ready', 'error');
+        if (!cancelled) markPrintError();
       }
     })();
     return () => {
@@ -51,16 +52,17 @@ export default function PrintTemplateRoute() {
   }, [id]);
 
   // Every <img> on the page (signature, header/footer letterhead) must have
-  // actually finished loading before the main process captures this page
-  // via printToPDF — otherwise a slow disk read leaves a blank gap in the
-  // archived PDF with no way to retry. The barcode itself is an inline SVG
-  // painted synchronously by JsBarcode's own effect (a sibling, and a child
-  // of the same component tree), which React guarantees has already run by
-  // the time this effect's body executes.
+  // actually finished loading, AND every webfont must be ready, before the
+  // main process captures this page via printToPDF — otherwise a slow disk
+  // read or a still-fetching font leaves a blank gap or fallback-font text
+  // in the archived PDF with no way to retry. The barcode itself is an
+  // inline SVG painted synchronously by JsBarcode's own effect (a sibling,
+  // and a child of the same component tree), which React guarantees has
+  // already run by the time this effect's body executes.
   useEffect(() => {
     if (!data) return;
     let cancelled = false;
-    const waitForImages = async () => {
+    const waitUntilReady = async () => {
       const imgs = Array.from(document.querySelectorAll('img'));
       await Promise.all(
         imgs.map(
@@ -72,14 +74,10 @@ export default function PrintTemplateRoute() {
             })
         )
       );
-      if (cancelled) return;
-      // One more paint tick after every image is decoded, so layout has
-      // settled around their final dimensions before printToPDF runs.
-      requestAnimationFrame(() => {
-        if (!cancelled) document.body.setAttribute('data-print-ready', 'true');
-      });
+      await waitForFontsAndPaint();
+      if (!cancelled) markPrintReady();
     };
-    waitForImages();
+    waitUntilReady();
     return () => {
       cancelled = true;
     };

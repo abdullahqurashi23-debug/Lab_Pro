@@ -61,7 +61,11 @@ export default function PrintReport() {
         const result = await api.print.report(report.id, mode);
         if (result.success) {
           await load();
-          toast.success(wasDraft ? 'Report finalized and sent to printer.' : 'Sent to printer.');
+          if (result.fellBackToPdf) {
+            toast.warning(`Direct printing failed (${result.error}). Opened the PDF instead — print it from there.`);
+          } else {
+            toast.success(wasDraft ? 'Report finalized and sent to printer.' : 'Sent to printer.');
+          }
         }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to print.');
