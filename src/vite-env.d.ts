@@ -3,6 +3,7 @@
 import type {
   ClinicSettings,
   Doctor,
+  Technician,
   NewTest,
   TestWithParameters,
   TestCategory,
@@ -72,6 +73,7 @@ export interface LoginResult {
   error?: string;
   user?: PublicUser;
   mustChangePassword?: boolean;
+  needsLabAccount?: boolean;
 }
 
 export interface NewPatientInput {
@@ -87,6 +89,10 @@ export interface NewDoctorInput {
   name: string;
   clinic?: string;
   phone?: string;
+}
+
+export interface NewTechnicianInput {
+  name: string;
 }
 
 export interface NewCategoryInput {
@@ -117,6 +123,7 @@ export interface LabProApi {
   auth: {
     needsSetup: () => Promise<boolean>;
     createFirstAdmin: (username: string, password: string) => Promise<LoginResult>;
+    createLabAccount: (username: string, password: string) => Promise<LoginResult>;
     login: (username: string, password: string) => Promise<LoginResult>;
     logout: (reason?: string) => Promise<void>;
     currentUser: () => Promise<PublicUser | null>;
@@ -132,6 +139,11 @@ export interface LabProApi {
     list: () => Promise<Doctor[]>;
     create: (input: NewDoctorInput) => Promise<Doctor>;
     update: (id: number, input: NewDoctorInput) => Promise<Doctor>;
+    delete: (id: number) => Promise<{ deleted: boolean }>;
+  };
+  technicians: {
+    list: () => Promise<Technician[]>;
+    create: (input: NewTechnicianInput) => Promise<Technician>;
     delete: (id: number) => Promise<{ deleted: boolean }>;
   };
   patients: {

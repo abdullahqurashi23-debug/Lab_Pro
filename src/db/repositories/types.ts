@@ -13,6 +13,7 @@ export interface User {
   role: Role;
   is_active: number;
   must_change_password: number;
+  is_provisional: number;
   created_at: string;
 }
 
@@ -38,6 +39,11 @@ export interface Doctor {
   name: string;
   clinic: string;
   phone: string;
+}
+
+export interface Technician {
+  id: number;
+  name: string;
 }
 
 export interface TestCategory {

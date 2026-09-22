@@ -80,6 +80,11 @@ export const doctorInputSchema = z.object({
   phone: z.string().trim().max(50).optional().default(''),
 });
 
+// ---------- Technicians ----------
+export const technicianInputSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200),
+});
+
 // ---------- Patients ----------
 export const patientInputSchema = z.object({
   full_name: z.string().trim().min(1, 'Patient name is required').max(200),

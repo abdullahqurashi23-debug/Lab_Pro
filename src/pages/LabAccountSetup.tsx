@@ -1,21 +1,19 @@
 import React, { useState } from 'react';
-import { FlaskConical } from 'lucide-react';
+import { UserCog } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
-// Shown exactly once per install, before any account exists. Whoever is
-// physically setting up this install (not the lab, not this software)
-// picks a username/password themselves — nothing is auto-generated or
-// hardcoded, so no one else could already know it. This account is
-// marked is_provisional and is only ever used to get past this screen:
-// right after, LabAccountSetup has the lab pick their own separate
-// username/password, and this one is deactivated in the same step.
-export default function FirstRunSetup() {
-  const { createFirstAdmin } = useAuth();
-  const [username, setUsername] = useState('admin');
+// Shown right after the installer's one-time setup account is created —
+// this is where the lab picks their OWN username and password. Once
+// submitted, the installer's account is deactivated on the spot: from
+// then on only this new account can log in, not the one used to install
+// the software.
+export default function LabAccountSetup() {
+  const { createLabAccount } = useAuth();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
@@ -34,9 +32,9 @@ export default function FirstRunSetup() {
     }
     setSaving(true);
     try {
-      const result = await createFirstAdmin(username, password);
+      const result = await createLabAccount(username, password);
       if (!result.ok) {
-        setError(result.error || 'Failed to create the admin account.');
+        setError(result.error || 'Failed to create the account.');
       }
     } finally {
       setSaving(false);
@@ -48,13 +46,13 @@ export default function FirstRunSetup() {
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center space-y-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <FlaskConical className="h-6 w-6" />
+            <UserCog className="h-6 w-6" />
           </div>
           <div>
-            <div className="text-lg font-bold text-foreground">Installer login</div>
+            <div className="text-lg font-bold text-foreground">Set up your login</div>
             <div className="text-sm text-muted-foreground mt-1">
-              This is a brand new install. Choose a username and password only you'll use to finish setup — right
-              after, the lab sets up their own separate login, and this one stops working.
+              Setup is complete. Choose the username and password you'll use every time you open this software —
+              this replaces the account used to install it.
             </div>
           </div>
         </CardHeader>
@@ -86,7 +84,7 @@ export default function FirstRunSetup() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={saving || !username || !password}>
-              {saving ? 'Creating…' : 'Create Admin Account'}
+              {saving ? 'Saving…' : 'Finish Setup'}
             </Button>
           </form>
         </CardContent>

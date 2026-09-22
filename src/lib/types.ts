@@ -43,6 +43,11 @@ export interface Doctor {
   phone: string;
 }
 
+export interface Technician {
+  id: number;
+  name: string;
+}
+
 export interface TestCategory {
   id: number;
   name: string;

@@ -6,7 +6,7 @@ import { toFileUrl } from '@/lib/fileUrl';
 import { useAuth } from '@/lib/auth-context';
 import { useClinic } from '@/lib/clinic-context';
 import { Link } from 'react-router-dom';
-import type { ClinicSettings, Doctor, BackupFileInfo, IntegrityCheckResult } from '@/lib/types';
+import type { ClinicSettings, Doctor, Technician, BackupFileInfo, IntegrityCheckResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -213,6 +213,7 @@ function ClinicInfoSection() {
 }
 
 const BLANK_DOCTOR = { name: '', clinic: '', phone: '' };
+const BLANK_TECHNICIAN = { name: '' };
 
 function DoctorsSection() {
   const { user } = useAuth();
@@ -307,6 +308,91 @@ function DoctorsSection() {
             <AlertDialogDescription>
               They'll no longer be selectable as a referring doctor on new reports.
             </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function TechniciansSection() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [form, setForm] = useState(BLANK_TECHNICIAN);
+  const [pendingDelete, setPendingDelete] = useState<Technician | null>(null);
+
+  const refresh = () =>
+    api.technicians.list().then(setTechnicians).catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load technicians.'));
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const add = async () => {
+    if (!form.name.trim()) return;
+    try {
+      await api.technicians.create(form);
+      setForm(BLANK_TECHNICIAN);
+      refresh();
+      toast.success('Technician added.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add technician.');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await api.technicians.delete(pendingDelete.id);
+      toast.success(`${pendingDelete.name} removed.`);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove technician.');
+    } finally {
+      setPendingDelete(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <Input
+          placeholder="Technician name"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          className="flex-1 min-w-[140px]"
+        />
+        <Button onClick={add}>
+          <Plus className="h-4 w-4" />
+          Add Technician
+        </Button>
+      </div>
+      <ul className="divide-y divide-border">
+        {technicians.map((t) => (
+          <li key={t.id} className="flex items-center justify-between py-2 text-sm">
+            <span>{t.name}</span>
+            {isAdmin && (
+              <Button variant="link" size="sm" className="h-auto p-0 text-destructive" onClick={() => setPendingDelete(t)}>
+                Remove
+              </Button>
+            )}
+          </li>
+        ))}
+        {technicians.length === 0 && <li className="py-2 text-sm text-muted-foreground">No technicians added yet.</li>}
+      </ul>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {pendingDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>They'll no longer be selectable in the "Performed By" field on new reports.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -903,7 +989,7 @@ export default function Settings() {
     <div className="p-8 space-y-6 max-w-4xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground text-sm mt-1">Clinic details, doctors, and account security.</p>
+        <p className="text-muted-foreground text-sm mt-1">Clinic details, doctors, technicians, and account security.</p>
       </div>
       {isAdmin && (
         <SectionCard title="Clinic Information">
@@ -913,6 +999,11 @@ export default function Settings() {
       {canManageDoctors && (
         <SectionCard title="Doctors">
           <DoctorsSection />
+        </SectionCard>
+      )}
+      {canManageDoctors && (
+        <SectionCard title="Technicians" description="The saved list shown in the &quot;Performed By&quot; field on New Report.">
+          <TechniciansSection />
         </SectionCard>
       )}
       {isAdmin && (

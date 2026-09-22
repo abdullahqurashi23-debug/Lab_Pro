@@ -11,6 +11,7 @@ import {
   usersRepo,
   patientsRepo,
   doctorsRepo,
+  techniciansRepo,
   testCategoriesRepo as categoriesRepo,
   testsRepo,
   reportsRepo,
@@ -33,6 +34,7 @@ import {
   createUserSchema,
   updateUserSchema,
   doctorInputSchema,
+  technicianInputSchema,
   patientInputSchema,
   categoryInputSchema,
   reorderCategoriesSchema,
@@ -282,14 +284,17 @@ handle('auth:needsSetup', () => {
   return !usersRepo.hasAnyUsers(db());
 });
 
-// Lets whoever is physically installing LabCore set the very first admin
-// password themselves — on the spot, known only to them — instead of the
+// Lets whoever is physically installing LabCore set the very first
+// account themselves — on the spot, known only to them — instead of the
 // app seeding a fixed or auto-generated password that would sit in the
 // database (and, previously, a plaintext file) before they've typed
 // anything in. Guarded by the same hasAnyUsers() check as the "needs
 // setup" screen itself: once ANY user exists, this handler refuses to run
 // again, so it can never be used to slip in a second, unauthorized admin
-// account later.
+// account later. Marked is_provisional: this account exists only to get
+// past the empty-database gate and immediately hand off to
+// auth:createLabAccount below — once the lab's own account exists, this
+// one is deactivated and can never log in again.
 handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string) => {
   if (usersRepo.hasAnyUsers(db())) {
     throw new Error('Setup has already been completed on this install.');
@@ -307,12 +312,47 @@ handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string) =
     password_hash: bcrypt.hashSync(parsedPassword.data, 10),
     full_name: 'Administrator',
     role: 'ADMIN',
-    must_change_password: true,
+    is_provisional: true,
   });
   currentUser = user;
   audit('CREATE', 'user', user.id, { username: user.username, initial_setup: true });
   audit('LOGIN', 'user', user.id);
-  return { ok: true, user, mustChangePassword: true };
+  return { ok: true, user, needsLabAccount: true };
+});
+
+// Only ever callable by whoever is currently logged in as the still-active
+// provisional account created above — this is what actually hands the
+// install off to the lab. The lab picks their own username AND password
+// here (unlike ForceChangePassword, which only ever resets the password
+// on the SAME account), and the provisional account is deactivated in the
+// same breath, so from this point on only the lab's own credentials can
+// ever log in — not the ones used to install it.
+handle('auth:createLabAccount', (_e, rawUsername: string, rawPassword: string) => {
+  const caller = requireAuth();
+  const callerRow = usersRepo.getUserById(db(), caller.id);
+  if (!callerRow || !callerRow.is_provisional || !callerRow.is_active) {
+    throw new Error('This account cannot create the lab account.');
+  }
+  const parsedUsername = usernameSchema.safeParse(rawUsername);
+  if (!parsedUsername.success) {
+    throw new Error(parsedUsername.error.errors.map((e) => e.message).join('; '));
+  }
+  const parsedPassword = passwordSchema.safeParse(rawPassword);
+  if (!parsedPassword.success) {
+    throw new Error(parsedPassword.error.errors.map((e) => e.message).join('; '));
+  }
+  const labUser = usersRepo.createUser(db(), {
+    username: parsedUsername.data,
+    password_hash: bcrypt.hashSync(parsedPassword.data, 10),
+    full_name: 'Administrator',
+    role: 'ADMIN',
+  });
+  usersRepo.updateUser(db(), callerRow.id, { is_active: 0 });
+  currentUser = labUser;
+  audit('CREATE', 'user', labUser.id, { username: labUser.username, lab_setup: true });
+  audit('UPDATE', 'user', callerRow.id, { is_active: false, reason: 'provisional_setup_account_retired' });
+  audit('LOGIN', 'user', labUser.id);
+  return { ok: true, user: labUser };
 });
 
 handle('auth:login', (_e, rawUsername: string, rawPassword: string) => {
@@ -334,6 +374,13 @@ handle('auth:login', (_e, rawUsername: string, rawPassword: string) => {
 
   currentUser = usersRepo.toPublicUser(user);
   audit('LOGIN', 'user', user.id);
+  // Resumes an interrupted setup: if whoever just logged in is still the
+  // provisional install account (the app was closed before the lab's own
+  // account got created), send them straight back to that step instead of
+  // into the normal app.
+  if (user.is_provisional) {
+    return { ok: true, user: currentUser, needsLabAccount: true };
+  }
   return { ok: true, user: currentUser, mustChangePassword: !!user.must_change_password };
 });
 
@@ -428,6 +475,24 @@ handle('doctors:delete', (_e, id) => {
   requireAdmin();
   const result = doctorsRepo.deleteDoctor(db(), idSchema.parse(id));
   audit('DELETE', 'doctor', idSchema.parse(id));
+  return result;
+});
+
+handle('technicians:list', () => {
+  requireAuth();
+  return techniciansRepo.listTechnicians(db());
+});
+handle('technicians:create', (_e, payload) => {
+  requireRole('ADMIN', 'RECEPTION', 'TECHNICIAN');
+  const input = technicianInputSchema.parse(payload);
+  const created = techniciansRepo.createTechnician(db(), input);
+  audit('CREATE', 'technician', created.id, input);
+  return created;
+});
+handle('technicians:delete', (_e, id) => {
+  requireAdmin();
+  const result = techniciansRepo.deleteTechnician(db(), idSchema.parse(id));
+  audit('DELETE', 'technician', idSchema.parse(id));
   return result;
 });
 

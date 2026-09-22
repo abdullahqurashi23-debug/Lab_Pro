@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Search, UserPlus, X, Plus, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import type { AgeUnit, Doctor, Gender, Patient } from '@/lib/types';
+import type { AgeUnit, Doctor, Gender, Patient, Technician } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,8 +48,11 @@ interface PatientPanelProps {
   onDoctorIdChange: (id: string) => void;
   // Who actually ran the test — distinct from the Referring Doctor (who
   // ordered it) and from whoever's account finalizes the report in the
-  // software. Free text, not its own managed list, since it's printed as
-  // a label on the report rather than referenced/joined elsewhere.
+  // software. Picked from the same saved/reusable technicians list as
+  // Referring Doctor is picked from doctors, but reports.performed_by
+  // itself stays a plain snapshot string (see migration 011) rather than
+  // a foreign key, so renaming/removing a technician later never changes
+  // what an already-created report shows.
   performedBy: string;
   onPerformedByChange: (name: string) => void;
   disabled?: boolean;
@@ -82,17 +85,27 @@ export default function PatientPanel({
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [doctorDialogOpen, setDoctorDialogOpen] = useState(false);
   const [newDoctor, setNewDoctor] = useState({ name: '', clinic: '', phone: '' });
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [technicianDialogOpen, setTechnicianDialogOpen] = useState(false);
+  const [newTechnicianName, setNewTechnicianName] = useState('');
   const [duplicate, setDuplicate] = useState<Patient | null>(null);
   const { user } = useAuth();
   const canAddDoctor = user?.role === 'ADMIN' || user?.role === 'RECEPTION';
+  const canAddTechnician = user?.role === 'ADMIN' || user?.role === 'RECEPTION' || user?.role === 'TECHNICIAN';
 
   const refreshDoctors = () =>
     api.doctors
       .list()
       .then(setDoctors)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load doctors.'));
+  const refreshTechnicians = () =>
+    api.technicians
+      .list()
+      .then(setTechnicians)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load technicians.'));
   useEffect(() => {
     refreshDoctors();
+    refreshTechnicians();
   }, []);
 
   // Only meaningful while entering a BRAND-NEW patient (no id yet) — matching
@@ -181,6 +194,19 @@ export default function PatientPanel({
       onDoctorIdChange(String(created.id));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to add doctor.');
+    }
+  };
+
+  const createTechnician = async () => {
+    if (!newTechnicianName.trim()) return;
+    try {
+      const created = await api.technicians.create({ name: newTechnicianName.trim() });
+      setNewTechnicianName('');
+      setTechnicianDialogOpen(false);
+      await refreshTechnicians();
+      onPerformedByChange(created.name);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add technician.');
     }
   };
 
@@ -339,15 +365,30 @@ export default function PatientPanel({
               </Button>
             </div>
           )}
-          <div className="col-span-2 space-y-1.5">
+          <div className="col-span-3 space-y-1.5">
             <Label>Performed By</Label>
-            <Input
-              placeholder="e.g. lab technician's name"
-              value={performedBy}
-              onChange={(e) => onPerformedByChange(e.target.value)}
-              disabled={disabled}
-            />
+            <Select value={performedBy || '__none__'} onValueChange={(v) => onPerformedByChange(v === '__none__' ? '' : v)} disabled={disabled}>
+              <SelectTrigger>
+                <SelectValue placeholder="— None —" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— None —</SelectItem>
+                {technicians.map((t) => (
+                  <SelectItem key={t.id} value={t.name}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          {canAddTechnician && (
+            <div className="flex items-end">
+              <Button variant="outline" className="w-full" onClick={() => setTechnicianDialogOpen(true)} disabled={disabled}>
+                <Plus className="h-4 w-4" />
+                New
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
 
@@ -375,6 +416,24 @@ export default function PatientPanel({
               Cancel
             </Button>
             <Button onClick={createDoctor}>Add Doctor</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={technicianDialogOpen} onOpenChange={setTechnicianDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Technician</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Name</Label>
+            <Input value={newTechnicianName} onChange={(e) => setNewTechnicianName(e.target.value)} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTechnicianDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={createTechnician}>Add Technician</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

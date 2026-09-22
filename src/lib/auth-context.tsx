@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { api } from '@/lib/api';
 import type { PublicUser } from '@/lib/types';
 
-type AuthPhase = 'checking' | 'needs-setup' | 'locked' | 'must-change-password' | 'unlocked';
+type AuthPhase = 'checking' | 'needs-setup' | 'needs-lab-account' | 'locked' | 'must-change-password' | 'unlocked';
 
 interface LoginOutcome {
   ok: boolean;
@@ -13,6 +13,7 @@ interface AuthContextValue {
   phase: AuthPhase;
   user: PublicUser | null;
   createFirstAdmin: (username: string, password: string) => Promise<LoginOutcome>;
+  createLabAccount: (username: string, password: string) => Promise<LoginOutcome>;
   login: (username: string, password: string) => Promise<LoginOutcome>;
   completePasswordChange: () => void;
   logout: (reason?: string) => void;
@@ -56,7 +57,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: result.error || 'Failed to create the admin account.' };
     }
     setUser(result.user);
-    setPhase(result.mustChangePassword ? 'must-change-password' : 'unlocked');
+    setPhase(result.needsLabAccount ? 'needs-lab-account' : 'unlocked');
+    return { ok: true };
+  }, []);
+
+  const createLabAccount = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
+    const result = await api.auth.createLabAccount(username, password);
+    if (!result.ok || !result.user) {
+      return { ok: false, error: result.error || 'Failed to create the lab account.' };
+    }
+    setUser(result.user);
+    setPhase('unlocked');
     return { ok: true };
   }, []);
 
@@ -66,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: result.error || 'Invalid username or password.' };
     }
     setUser(result.user);
-    setPhase(result.mustChangePassword ? 'must-change-password' : 'unlocked');
+    setPhase(result.needsLabAccount ? 'needs-lab-account' : result.mustChangePassword ? 'must-change-password' : 'unlocked');
     return { ok: true };
   }, []);
 
@@ -80,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPhase('locked');
   }, []);
 
-  const value: AuthContextValue = { phase, user, createFirstAdmin, login, completePasswordChange, logout };
+  const value: AuthContextValue = { phase, user, createFirstAdmin, createLabAccount, login, completePasswordChange, logout };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

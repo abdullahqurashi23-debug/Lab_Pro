@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
     needsSetup: () => ipcRenderer.invoke('auth:needsSetup'),
     createFirstAdmin: (username: string, password: string) =>
       ipcRenderer.invoke('auth:createFirstAdmin', username, password),
+    createLabAccount: (username: string, password: string) =>
+      ipcRenderer.invoke('auth:createLabAccount', username, password),
     login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
     logout: (reason?: string) => ipcRenderer.invoke('auth:logout', reason),
     currentUser: () => ipcRenderer.invoke('auth:currentUser'),
@@ -26,6 +28,11 @@ contextBridge.exposeInMainWorld('api', {
     create: (payload: unknown) => ipcRenderer.invoke('doctors:create', payload),
     update: (id: number, payload: unknown) => ipcRenderer.invoke('doctors:update', id, payload),
     delete: (id: number) => ipcRenderer.invoke('doctors:delete', id),
+  },
+  technicians: {
+    list: () => ipcRenderer.invoke('technicians:list'),
+    create: (payload: unknown) => ipcRenderer.invoke('technicians:create', payload),
+    delete: (id: number) => ipcRenderer.invoke('technicians:delete', id),
   },
   patients: {
     search: (query: string) => ipcRenderer.invoke('patients:search', query),

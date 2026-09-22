@@ -1,0 +1,11 @@
+-- Marks the one-time account created by the first-run setup screen (see
+-- auth:createFirstAdmin) as provisional: it exists only so whoever is
+-- installing LabCore can get past the empty-database gate and hand the
+-- machine to the lab. Once the lab creates their own real account (see
+-- auth:createLabAccount), the provisional account is deactivated
+-- (is_active = 0) and can never log in again — only the lab's own
+-- username/password works from then on. is_active alone can't tell the
+-- two states apart (a lab that deliberately keeps exactly one account
+-- would otherwise look identical to "setup still pending"), which is
+-- why this needs its own column rather than reusing an existing one.
+ALTER TABLE users ADD COLUMN is_provisional INTEGER NOT NULL DEFAULT 0;

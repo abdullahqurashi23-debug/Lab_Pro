@@ -2,6 +2,7 @@ export * from './types';
 export * as usersRepo from './users';
 export * as patientsRepo from './patients';
 export * as doctorsRepo from './doctors';
+export * as techniciansRepo from './technicians';
 export * as testCategoriesRepo from './testCategories';
 export * as testsRepo from './tests';
 export * as catalogRepo from './catalog';
