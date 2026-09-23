@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { Search, UserPlus, X, Plus, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -97,12 +97,12 @@ export default function PatientPanel({
     api.doctors
       .list()
       .then(setDoctors)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load doctors.'));
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load doctors.'));
   const refreshTechnicians = () =>
     api.technicians
       .list()
       .then(setTechnicians)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load technicians.'));
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load technicians.'));
   useEffect(() => {
     refreshDoctors();
     refreshTechnicians();
@@ -151,7 +151,7 @@ export default function PatientPanel({
           setResults(r);
           setOpen(true);
         })
-        .catch((err) => toast.error(err instanceof Error ? err.message : 'Patient search failed.'));
+        .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Patient search failed.'));
     }, 150);
     return () => clearTimeout(timer);
   }, [query]);
@@ -193,7 +193,7 @@ export default function PatientPanel({
       await refreshDoctors();
       onDoctorIdChange(String(created.id));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add doctor.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to add doctor.');
     }
   };
 
@@ -206,7 +206,7 @@ export default function PatientPanel({
       await refreshTechnicians();
       onPerformedByChange(created.name);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add technician.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to add technician.');
     }
   };
 

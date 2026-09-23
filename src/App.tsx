@@ -25,6 +25,7 @@ import ForceChangePassword from './pages/ForceChangePassword';
 import FirstRunSetup from './pages/FirstRunSetup';
 import LabAccountSetup from './pages/LabAccountSetup';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { ErrorDialogHost } from '@/lib/errorDialog';
 import { ClinicProvider } from '@/lib/clinic-context';
 import { useIdleTimer } from '@/lib/useIdleTimer';
 import { api } from '@/lib/api';
@@ -163,6 +164,7 @@ export default function App() {
   return (
     <AuthProvider>
       <RouterProvider router={router} />
+      <ErrorDialogHost />
     </AuthProvider>
   );
 }

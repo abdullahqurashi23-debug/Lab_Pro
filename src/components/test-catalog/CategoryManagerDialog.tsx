@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useDragReorder } from '@/lib/useDragReorder';
@@ -36,7 +37,7 @@ export default function CategoryManagerDialog({ open, onOpenChange, categories, 
       await api.categories.reorder(next.map((c) => c.id));
       onChanged();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reorder categories.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to reorder categories.');
     }
   });
 
@@ -56,7 +57,7 @@ export default function CategoryManagerDialog({ open, onOpenChange, categories, 
       onChanged();
       toast.success('Category added.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add category.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to add category.');
     }
   };
 
@@ -69,7 +70,7 @@ export default function CategoryManagerDialog({ open, onOpenChange, categories, 
       onChanged();
       toast.success('Category renamed.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rename category.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to rename category.');
     }
   };
 
@@ -80,7 +81,7 @@ export default function CategoryManagerDialog({ open, onOpenChange, categories, 
       onChanged();
       toast.success('Category deleted.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete category.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to delete category.');
     } finally {
       setPendingDelete(null);
     }

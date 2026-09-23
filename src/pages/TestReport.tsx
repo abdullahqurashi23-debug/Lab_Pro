@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Printer, FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import type { RevenueGranularity, TestReportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -31,7 +32,7 @@ export default function TestReport() {
       .then(setReport)
       .catch((err) => {
         setReport(null);
-        toast.error(err instanceof Error ? err.message : 'Failed to load the test report.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to load the test report.');
       })
       .finally(() => setLoading(false));
   };
@@ -53,7 +54,7 @@ export default function TestReport() {
         }
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to print.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to print.');
     } finally {
       setBusy(null);
     }
@@ -64,9 +65,9 @@ export default function TestReport() {
     try {
       const result = await api.testReport.exportPdf(filters);
       if (result.success) toast.success(`Saved to ${result.path}`);
-      else if (!result.canceled) toast.error(result.error || 'Failed to save PDF.');
+      else if (!result.canceled) showErrorDialog(result.error || 'Failed to save PDF.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save PDF.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save PDF.');
     } finally {
       setBusy(null);
     }

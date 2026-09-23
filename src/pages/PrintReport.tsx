@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { mergePrintLayout, type PrintLayout } from '@/db/printLayout';
@@ -35,14 +36,14 @@ export default function PrintReport() {
     try {
       const [r, s, l] = await Promise.all([api.reports.getById(Number(id)), api.settings.get(), api.settings.getPrintLayout()]);
       if (!r) {
-        toast.error('Report not found.');
+        showErrorDialog('Report not found.');
         return;
       }
       setReport(r);
       setClinic(s);
       setLayout(mergePrintLayout(l));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load report.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to load report.');
     }
   }, [id]);
 
@@ -68,7 +69,7 @@ export default function PrintReport() {
           }
         }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to print.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to print.');
       } finally {
         setBusy(null);
       }
@@ -85,10 +86,10 @@ export default function PrintReport() {
       if (result.success) {
         toast.success(`PDF saved${result.path ? ` to ${result.path}` : ''}.`);
       } else if (result.error) {
-        toast.error(result.error);
+        showErrorDialog(result.error);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save PDF.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save PDF.');
     } finally {
       setBusy(null);
     }
@@ -106,7 +107,7 @@ export default function PrintReport() {
       await load();
       toast.success('PDF regenerated.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to regenerate the PDF.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to regenerate the PDF.');
     }
   };
 
@@ -118,7 +119,7 @@ export default function PrintReport() {
         toast.error('PDF file not found for this report.', { action: { label: 'Regenerate', onClick: regeneratePdf } });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to open PDF.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to open PDF.');
     }
   };
 
@@ -130,7 +131,7 @@ export default function PrintReport() {
         toast.error('PDF file not found for this report.', { action: { label: 'Regenerate', onClick: regeneratePdf } });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to open folder.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to open folder.');
     }
   };
 

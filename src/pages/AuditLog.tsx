@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import type { AuditLogEntry, PublicUser } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -75,7 +75,7 @@ export default function AuditLog() {
       .catch((err) => {
         setRows([]);
         setTotal(0);
-        toast.error(err instanceof Error ? err.message : 'Failed to load audit log.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to load audit log.');
       })
       .finally(() => setLoading(false));
   }, [from, to, action, entity, userId, page]);

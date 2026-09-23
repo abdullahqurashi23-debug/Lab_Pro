@@ -17,6 +17,7 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<LoginOutcome>;
   completePasswordChange: () => void;
   logout: (reason?: string) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -91,7 +92,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPhase('locked');
   }, []);
 
-  const value: AuthContextValue = { phase, user, createFirstAdmin, createLabAccount, login, completePasswordChange, logout };
+  // Lets the TopBar's displayed name update immediately after the current
+  // user edits their own full name in Users — otherwise it would keep
+  // showing the stale name (held in this context's state) until the next
+  // login, even though the database and Users list are already correct.
+  const refreshUser = useCallback(async () => {
+    const current = await api.auth.currentUser();
+    if (current) setUser(current);
+  }, []);
+
+  const value: AuthContextValue = { phase, user, createFirstAdmin, createLabAccount, login, completePasswordChange, logout, refreshUser };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

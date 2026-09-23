@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import {
   FileJson,
   Upload,
@@ -61,12 +62,12 @@ export default function TestCatalog() {
     api.tests
       .list(true)
       .then(setTests)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load tests.'));
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load tests.'));
   const refreshCategories = () =>
     api.categories
       .list()
       .then(setCategories)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load categories.'));
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load categories.'));
   useEffect(() => {
     Promise.all([refreshTests(), refreshCategories()]).finally(() => setLoading(false));
   }, []);
@@ -129,7 +130,7 @@ export default function TestCatalog() {
       toast.success('Test deleted.');
       refreshTests();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete test.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to delete test.');
     } finally {
       setPendingDelete(null);
     }
@@ -147,7 +148,7 @@ export default function TestCatalog() {
       }
       refreshTests();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update test.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to update test.');
     } finally {
       setPendingDeactivate(null);
     }
@@ -158,7 +159,7 @@ export default function TestCatalog() {
     try {
       const result = await api.tests.exportJson();
       if (result.success) toast.success(`Exported to ${result.path}`);
-      else if (!result.canceled) toast.error(result.error || 'Export failed.');
+      else if (!result.canceled) showErrorDialog(result.error || 'Export failed.');
     } finally {
       setExporting(false);
     }
@@ -176,7 +177,7 @@ export default function TestCatalog() {
       refreshTests();
       refreshCategories();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Import failed.');
+      showErrorDialog(err instanceof Error ? err.message : 'Import failed.');
     } finally {
       setImporting(false);
     }

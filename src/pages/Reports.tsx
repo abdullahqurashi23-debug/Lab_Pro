@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { Doctor, ReportListRow, ReportSortKey } from '@/lib/types';
@@ -96,7 +97,7 @@ export default function Reports() {
       .catch((err) => {
         setRows([]);
         setTotal(0);
-        toast.error(err instanceof Error ? err.message : 'Failed to load reports.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to load reports.');
       })
       .finally(() => setLoading(false));
   };
@@ -149,7 +150,7 @@ export default function Reports() {
       toast.success('Draft report deleted.');
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete report.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to delete report.');
     } finally {
       setPendingDeleteId(null);
     }
@@ -167,7 +168,7 @@ export default function Reports() {
       if (result.success) {
         toast.success(`Exported to ${result.path}`);
       } else if (!result.canceled) {
-        toast.error(result.error || 'Export failed.');
+        showErrorDialog(result.error || 'Export failed.');
       }
     } finally {
       setExporting(false);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, KeyRound, ShieldOff, ShieldCheck } from 'lucide-react';
+import { showErrorDialog } from '@/lib/errorDialog';
+import { Plus, KeyRound, ShieldOff, ShieldCheck, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { PublicUser, Role } from '@/lib/types';
@@ -26,7 +27,7 @@ const ROLES: Role[] = ['ADMIN', 'TECHNICIAN', 'RECEPTION'];
 const BLANK_USER = { username: '', password: '', full_name: '', role: 'RECEPTION' as Role };
 
 export default function Users() {
-  const { user: me } = useAuth();
+  const { user: me, refreshUser } = useAuth();
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
@@ -34,12 +35,14 @@ export default function Users() {
   const [resetTarget, setResetTarget] = useState<PublicUser | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [deactivateTarget, setDeactivateTarget] = useState<PublicUser | null>(null);
+  const [renameTarget, setRenameTarget] = useState<PublicUser | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const refresh = () =>
     api.users
       .list()
       .then(setUsers)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load users.'))
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load users.'))
       .finally(() => setLoading(false));
   useEffect(() => {
     refresh();
@@ -55,7 +58,7 @@ export default function Users() {
 
   const createUser = async () => {
     if (!newUser.username.trim() || !newUser.password || !newUser.full_name.trim()) {
-      toast.error('Username, password, and full name are required.');
+      showErrorDialog('Username, password, and full name are required.');
       return;
     }
     try {
@@ -65,7 +68,7 @@ export default function Users() {
       setNewUser(BLANK_USER);
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create user.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to create user.');
     }
   };
 
@@ -75,7 +78,7 @@ export default function Users() {
       toast.success(u.is_active ? `${u.username} deactivated.` : `${u.username} reactivated.`);
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update user.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to update user.');
     }
   };
 
@@ -96,14 +99,39 @@ export default function Users() {
       toast.success(`${u.username}'s role changed to ${role}.`);
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update role.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to update role.');
+    }
+  };
+
+  const openRename = (u: PublicUser) => {
+    setRenameTarget(u);
+    setRenameValue(u.full_name);
+  };
+
+  const submitRename = async () => {
+    if (!renameTarget) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      showErrorDialog('Full name is required.');
+      return;
+    }
+    try {
+      await api.users.update(renameTarget.id, { full_name: trimmed, role: renameTarget.role, is_active: !!renameTarget.is_active });
+      toast.success(`Name updated to ${trimmed}.`);
+      setRenameTarget(null);
+      // If the admin just renamed their own account, the top bar's cached
+      // name would otherwise stay stale until the next login.
+      if (renameTarget.id === me?.id) refreshUser();
+      refresh();
+    } catch (err) {
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to update name.');
     }
   };
 
   const submitReset = async () => {
     if (!resetTarget) return;
     if (resetPassword.length < 4) {
-      toast.error('Password must be at least 4 characters.');
+      showErrorDialog('Password must be at least 4 characters.');
       return;
     }
     try {
@@ -112,7 +140,7 @@ export default function Users() {
       setResetTarget(null);
       setResetPassword('');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reset password.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to reset password.');
     }
   };
 
@@ -149,7 +177,14 @@ export default function Users() {
             {users.map((u) => (
               <TableRow key={u.id}>
                 <TableCell className="font-medium">{u.username}</TableCell>
-                <TableCell>{u.full_name}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <span>{u.full_name}</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit name" onClick={() => openRename(u)}>
+                      <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </TableCell>
                 <TableCell>
                   <Select value={u.role} onValueChange={(v) => changeRole(u, v as Role)} disabled={u.id === me?.id}>
                     <SelectTrigger className="h-8 w-36">
@@ -248,6 +283,29 @@ export default function Users() {
               Cancel
             </Button>
             <Button onClick={createUser}>Create User</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit name for {renameTarget?.username}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Full Name</Label>
+            <Input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submitRename()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={submitRename}>Save Name</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

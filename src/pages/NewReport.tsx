@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useBlocker } from 'react-router-dom';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { Search, Save, Eye, PrinterCheck, Loader2, Check } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -84,7 +85,7 @@ export default function NewReport() {
     api.tests
       .list()
       .then(setAllTests)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load tests.'));
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load tests.'));
   }, []);
 
   // Edit mode: load an existing draft (or a finalized report, read-only) —
@@ -97,7 +98,7 @@ export default function NewReport() {
       try {
         const report = await api.reports.getById(Number(id));
         if (!report) {
-          toast.error('Report not found.');
+          showErrorDialog('Report not found.');
           navigate('/reports');
           return;
         }
@@ -148,7 +149,7 @@ export default function NewReport() {
         setStatus(report.status);
       } catch (err) {
         if (!cancelled) {
-          toast.error(err instanceof Error ? err.message : 'Failed to load report.');
+          showErrorDialog(err instanceof Error ? err.message : 'Failed to load report.');
           navigate('/reports');
         }
       } finally {
@@ -264,7 +265,7 @@ export default function NewReport() {
         setDirty(false);
         return { id: result.id, status: result.status };
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to save report.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to save report.');
         return null;
       } finally {
         savingRef.current = false;
@@ -337,14 +338,14 @@ export default function NewReport() {
 
   const handleFinalizeClick = () => {
     if (!canFinalize) {
-      toast.error('Only an admin or technician can finalize a report.');
+      showErrorDialog('Only an admin or technician can finalize a report.');
       return;
     }
     const incomplete = getIncompleteResults();
     if (incomplete.length > 0) {
       const shown = incomplete.slice(0, 5).join(', ');
       const more = incomplete.length > 5 ? `, and ${incomplete.length - 5} more` : '';
-      toast.error(`Missing results for: ${shown}${more}. Enter a value or mark "Not Done".`);
+      showErrorDialog(`Missing results for: ${shown}${more}. Enter a value or mark "Not Done".`);
       return;
     }
     setFinalizeConfirmOpen(true);
@@ -359,7 +360,7 @@ export default function NewReport() {
       await api.reports.finalize(saved.id);
       navigate(`/reports/${saved.id}/print?autoprint=1`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to finalize report.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to finalize report.');
     } finally {
       setSaving(false);
     }

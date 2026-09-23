@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import type { PatientWithStats } from '@/lib/types';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ export default function Patients() {
       api.patients
         .list(query)
         .then(setPatients)
-        .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load patients.'))
+        .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load patients.'))
         .finally(() => setLoading(false));
     }, 150);
     return () => clearTimeout(timer);

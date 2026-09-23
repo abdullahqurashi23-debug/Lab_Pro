@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import type { Patient, ReportListRow, PatientTrendParameter, PatientParameterPoint } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -133,7 +133,7 @@ export default function PatientProfile() {
       })
       .catch((err) => {
         if (cancelled) return;
-        toast.error(err instanceof Error ? err.message : 'Failed to load patient.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to load patient.');
         navigate('/patients');
       })
       .finally(() => {

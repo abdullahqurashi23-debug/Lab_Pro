@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Plus } from 'lucide-react';
-import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import type { DashboardStats, ReportListRow } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,7 @@ export default function Dashboard() {
         // A rejected/incompatible response here (e.g. the app was updated
         // but the running process is stale) should never leave the whole
         // page stuck or crash it — just surface it and let the user retry.
-        toast.error(err instanceof Error ? err.message : 'Failed to load dashboard stats.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to load dashboard stats.');
       })
       .finally(() => setLoading(false));
   }, []);

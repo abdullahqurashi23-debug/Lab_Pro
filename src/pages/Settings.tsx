@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toFileUrl } from '@/lib/fileUrl';
@@ -82,7 +83,7 @@ function ClinicInfoSection() {
       refreshClinicName();
       toast.success('Clinic information saved.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save.');
     } finally {
       setSaving(false);
     }
@@ -222,7 +223,7 @@ function DoctorsSection() {
   const [form, setForm] = useState(BLANK_DOCTOR);
   const [pendingDelete, setPendingDelete] = useState<Doctor | null>(null);
 
-  const refresh = () => api.doctors.list().then(setDoctors).catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load doctors.'));
+  const refresh = () => api.doctors.list().then(setDoctors).catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load doctors.'));
   useEffect(() => {
     refresh();
   }, []);
@@ -235,7 +236,7 @@ function DoctorsSection() {
       refresh();
       toast.success('Doctor added.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add doctor.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to add doctor.');
     }
   };
 
@@ -246,7 +247,7 @@ function DoctorsSection() {
       toast.success(`${pendingDelete.name} removed.`);
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove doctor.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to remove doctor.');
     } finally {
       setPendingDelete(null);
     }
@@ -329,7 +330,7 @@ function TechniciansSection() {
   const [pendingDelete, setPendingDelete] = useState<Technician | null>(null);
 
   const refresh = () =>
-    api.technicians.list().then(setTechnicians).catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load technicians.'));
+    api.technicians.list().then(setTechnicians).catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load technicians.'));
   useEffect(() => {
     refresh();
   }, []);
@@ -342,7 +343,7 @@ function TechniciansSection() {
       refresh();
       toast.success('Technician added.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add technician.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to add technician.');
     }
   };
 
@@ -353,7 +354,7 @@ function TechniciansSection() {
       toast.success(`${pendingDelete.name} removed.`);
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove technician.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to remove technician.');
     } finally {
       setPendingDelete(null);
     }
@@ -414,11 +415,11 @@ function SecuritySection() {
 
   const submit = async () => {
     if (next.length < 4) {
-      toast.error('New password must be at least 4 characters.');
+      showErrorDialog('New password must be at least 4 characters.');
       return;
     }
     if (next !== confirm) {
-      toast.error('New passwords do not match.');
+      showErrorDialog('New passwords do not match.');
       return;
     }
     setSaving(true);
@@ -430,7 +431,7 @@ function SecuritySection() {
         setNext('');
         setConfirm('');
       } else {
-        toast.error(result.error || 'Failed to change password.');
+        showErrorDialog(result.error || 'Failed to change password.');
       }
     } finally {
       setSaving(false);
@@ -474,7 +475,7 @@ function IdleTimeoutSection() {
       await api.appSettings.set('idle_timeout_minutes', String(Math.max(0, Number(minutes) || 0)));
       toast.success('Auto-lock setting saved.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save.');
     } finally {
       setSaving(false);
     }
@@ -591,7 +592,7 @@ function PrintLayoutSection() {
       setLayout(mergePrintLayout(updated));
       toast.success('Print layout saved.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save print layout.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save print layout.');
     } finally {
       setSaving(false);
     }
@@ -603,7 +604,7 @@ function PrintLayoutSection() {
       await api.print.testPage();
       toast.success('Test page sent to printer.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to print test page.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to print test page.');
     } finally {
       setTesting(false);
     }
@@ -669,7 +670,7 @@ function VerifyReportSection() {
       const result = await api.reports.verifyPdf();
       if (result.canceled) return;
       if (!result.success) {
-        toast.error(result.error || 'Failed to verify PDF.');
+        showErrorDialog(result.error || 'Failed to verify PDF.');
         return;
       }
       if (result.matched && result.report && result.filePath) {
@@ -684,7 +685,7 @@ function VerifyReportSection() {
         setOutcome({ kind: 'unmatched', filePath: result.filePath, hash: result.hash });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to verify PDF.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to verify PDF.');
     } finally {
       setChecking(false);
     }
@@ -743,7 +744,7 @@ function RegenerateMissingPdfsSection() {
       const missing = await api.reports.findMissingPdfs();
       setMissingCount(missing.length);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to check for missing PDFs.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to check for missing PDFs.');
     } finally {
       setScanning(false);
     }
@@ -758,7 +759,7 @@ function RegenerateMissingPdfsSection() {
       const succeeded = repaired.filter((r) => r.success).length;
       if (succeeded > 0) toast.success(`${succeeded} PDF${succeeded === 1 ? '' : 's'} regenerated.`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to regenerate PDFs.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to regenerate PDFs.');
     } finally {
       setRunning(false);
     }
@@ -830,7 +831,7 @@ function RestoreBackupDialog({
   const confirm = async () => {
     if (!backup) return;
     if (!password) {
-      toast.error('Enter your password to confirm.');
+      showErrorDialog('Enter your password to confirm.');
       return;
     }
     setRestoring(true);
@@ -840,7 +841,7 @@ function RestoreBackupDialog({
       // this line only runs if something unexpected left the app open.
       onRestored();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Restore failed.');
+      showErrorDialog(err instanceof Error ? err.message : 'Restore failed.');
     } finally {
       setRestoring(false);
       setPassword('');
@@ -887,12 +888,12 @@ function BackupSection() {
   const [backingUp, setBackingUp] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<BackupFileInfo | null>(null);
 
-  const refresh = () => api.backup.list().then(setBackups).catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load backups.'));
+  const refresh = () => api.backup.list().then(setBackups).catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load backups.'));
   useEffect(() => {
     api.settings
       .get()
       .then((s) => setFolder(s.backup_folder))
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load backup folder setting.'));
+      .catch((err) => showErrorDialog(err instanceof Error ? err.message : 'Failed to load backup folder setting.'));
     refresh();
   }, []);
 
@@ -903,7 +904,7 @@ function BackupSection() {
       toast.success('Backup folder saved.');
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save.');
     } finally {
       setSaving(false);
     }
@@ -916,7 +917,7 @@ function BackupSection() {
       toast.success(`Backup saved: ${info.name} (${formatBytes(info.sizeBytes)})`);
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Backup failed.');
+      showErrorDialog(err instanceof Error ? err.message : 'Backup failed.');
     } finally {
       setBackingUp(false);
     }
@@ -1008,9 +1009,9 @@ function DatabaseHealthSection() {
       const r = await api.db.healthCheck();
       setResult(r);
       if (r.ok) toast.success('Database integrity check passed.');
-      else toast.error('Database integrity check found a problem.');
+      else showErrorDialog('Database integrity check found a problem.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Health check failed.');
+      showErrorDialog(err instanceof Error ? err.message : 'Health check failed.');
     } finally {
       setChecking(false);
     }

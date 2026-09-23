@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,7 +46,7 @@ export default function RecordPaymentDialog({ open, onOpenChange, reportId, repo
   const submit = async () => {
     const n = Number(amount);
     if (!n || n <= 0) {
-      toast.error('Enter an amount greater than zero.');
+      showErrorDialog('Enter an amount greater than zero.');
       return;
     }
     setSaving(true);
@@ -56,7 +57,7 @@ export default function RecordPaymentDialog({ open, onOpenChange, reportId, repo
       reset();
       onRecorded();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to record payment.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to record payment.');
     } finally {
       setSaving(false);
     }

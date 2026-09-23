@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { FileSpreadsheet, FileText, Printer, TrendingUp, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
+import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
 import type { RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -118,7 +119,7 @@ export default function Revenue() {
       .then(setReport)
       .catch((err) => {
         setReport(null);
-        toast.error(err instanceof Error ? err.message : 'Failed to load revenue data.');
+        showErrorDialog(err instanceof Error ? err.message : 'Failed to load revenue data.');
       })
       .finally(() => setLoading(false));
   };
@@ -144,7 +145,7 @@ export default function Revenue() {
     try {
       const result = await api.revenue.exportExcel(filters);
       if (result.success) toast.success(`Exported to ${result.path}`);
-      else if (!result.canceled) toast.error(result.error || 'Export failed.');
+      else if (!result.canceled) showErrorDialog(result.error || 'Export failed.');
     } finally {
       setExporting(null);
     }
@@ -155,7 +156,7 @@ export default function Revenue() {
     try {
       const result = await api.revenue.exportPdf(filters);
       if (result.success) toast.success(`Exported to ${result.path}`);
-      else if (!result.canceled) toast.error(result.error || 'Export failed.');
+      else if (!result.canceled) showErrorDialog(result.error || 'Export failed.');
     } finally {
       setExporting(null);
     }
@@ -173,7 +174,7 @@ export default function Revenue() {
         }
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to print.');
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to print.');
     } finally {
       setExporting(null);
     }
