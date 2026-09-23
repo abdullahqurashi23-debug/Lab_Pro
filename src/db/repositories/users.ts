@@ -23,34 +23,16 @@ export function createUser(
     full_name: string;
     role: Role;
     must_change_password?: boolean;
-    is_provisional?: boolean;
   }
 ): PublicUser {
   const existing = getUserByUsername(db, input.username);
   if (existing) throw new Error(`Username "${input.username}" is already taken.`);
   const info = db
     .prepare(
-      'INSERT INTO users (username, password_hash, full_name, role, must_change_password, is_provisional) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO users (username, password_hash, full_name, role, must_change_password) VALUES (?, ?, ?, ?, ?)'
     )
-    .run(
-      input.username,
-      input.password_hash,
-      input.full_name,
-      input.role,
-      input.must_change_password ? 1 : 0,
-      input.is_provisional ? 1 : 0
-    );
+    .run(input.username, input.password_hash, input.full_name, input.role, input.must_change_password ? 1 : 0);
   return getUserById(db, info.lastInsertRowid as number) as PublicUser;
-}
-
-// True only while the one-time setup account (see auth:createFirstAdmin)
-// is still active and no one has completed auth:createLabAccount yet —
-// deliberately not "total user count === 1", since a lab that ends up
-// with exactly one real account of its own would otherwise look
-// identical to "setup still pending" forever.
-export function hasPendingProvisionalSetup(db: Database.Database): boolean {
-  const row = db.prepare('SELECT COUNT(*) as n FROM users WHERE is_provisional = 1 AND is_active = 1').get() as { n: number };
-  return row.n > 0;
 }
 
 export function updateUser(
@@ -81,9 +63,4 @@ export function setPassword(db: Database.Database, id: number, passwordHash: str
 export function toPublicUser(user: User): PublicUser {
   const { password_hash: _password_hash, ...rest } = user;
   return rest;
-}
-
-export function hasAnyUsers(db: Database.Database): boolean {
-  const row = db.prepare('SELECT COUNT(*) as n FROM users').get() as { n: number };
-  return row.n > 0;
 }

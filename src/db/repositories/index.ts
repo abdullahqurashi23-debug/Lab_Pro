@@ -15,3 +15,4 @@ export * as auditLogRepo from './auditLog';
 export * as settingsRepo from './settings';
 export * as printSettingsRepo from './printSettings';
 export * as clinicSettingsRepo from './clinicSettings';
+export * as setupRepo from './setup';

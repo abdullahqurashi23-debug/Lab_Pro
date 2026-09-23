@@ -22,8 +22,9 @@ import TestReportPrintTemplate from './pages/TestReportPrintTemplate';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import Login from './pages/Login';
 import ForceChangePassword from './pages/ForceChangePassword';
-import FirstRunSetup from './pages/FirstRunSetup';
-import LabAccountSetup from './pages/LabAccountSetup';
+import DeveloperSetup from './pages/DeveloperSetup';
+import LabSetupWizard from './pages/LabSetupWizard';
+import DeveloperAccessGate from './components/DeveloperAccessGate';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { ErrorDialogHost } from '@/lib/errorDialog';
 import { ClinicProvider } from '@/lib/clinic-context';
@@ -107,16 +108,20 @@ function Gate() {
     );
   }
 
-  if (phase === 'needs-setup') {
-    return <FirstRunSetup />;
+  if (phase === 'needs-dev-setup') {
+    return <DeveloperSetup />;
   }
 
-  if (phase === 'needs-lab-account') {
-    return <LabAccountSetup />;
+  if (phase === 'needs-lab-setup') {
+    return <LabSetupWizard />;
   }
 
   if (phase === 'locked') {
-    return <Login />;
+    return (
+      <DeveloperAccessGate>
+        <Login />
+      </DeveloperAccessGate>
+    );
   }
 
   if (phase === 'must-change-password') {

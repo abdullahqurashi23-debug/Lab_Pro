@@ -62,6 +62,33 @@ export const roleSchema = z.enum(['ADMIN', 'TECHNICIAN', 'RECEPTION']);
 
 export const fullNameSchema = z.string().trim().min(1, 'Full name is required').max(200);
 
+// Stricter than passwordSchema (min 4, used for day-to-day password resets)
+// — the Lab Setup Wizard is a one-time, high-stakes choice (this becomes
+// the lab's own permanent admin login), so it holds to a higher bar.
+export const strongPasswordSchema = z.string().min(8, 'Password must be at least 8 characters').max(200);
+
+export const labSetupSchema = z.object({
+  clinic: z.object({
+    clinic_name: z.string().trim().min(1, 'Lab name is required').max(200),
+    address: z.string().trim().max(500).optional().default(''),
+    phone: z.string().trim().max(50).optional().default(''),
+    pathologist_name: z.string().trim().max(200).optional().default(''),
+    report_number_prefix: z
+      .string()
+      .trim()
+      .max(20)
+      .regex(/^[A-Za-z0-9]*$/, 'Prefix can only contain letters and numbers')
+      .optional()
+      .default('LAB'),
+    report_archive_folder: z.string().trim().max(1000).optional().default(''),
+  }),
+  admin: z.object({
+    full_name: z.string().trim().min(1, 'Full name is required').max(200),
+    username: z.string().trim().min(2, 'Username is required').max(50),
+    password: strongPasswordSchema,
+  }),
+});
+
 export const createUserSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,

@@ -80,7 +80,46 @@ export interface LoginResult {
   error?: string;
   user?: PublicUser;
   mustChangePassword?: boolean;
-  needsLabAccount?: boolean;
+}
+
+export interface DevLoginResult {
+  ok: boolean;
+  error?: string;
+  lockedUntil?: number;
+}
+
+export interface DevInfo {
+  name: string;
+  contact: string;
+}
+
+export interface DevSystemInfo {
+  appVersion: string;
+  electronVersion: string;
+  chromeVersion: string;
+  nodeVersion: string;
+  platform: string;
+  osRelease: string;
+  arch: string;
+  machineId: string;
+  dbPath: string;
+  userDataPath: string;
+}
+
+export interface LabSetupInput {
+  clinic: {
+    clinic_name: string;
+    address?: string;
+    phone?: string;
+    pathologist_name?: string;
+    report_number_prefix?: string;
+    report_archive_folder?: string;
+  };
+  admin: {
+    full_name: string;
+    username: string;
+    password: string;
+  };
 }
 
 export interface NewPatientInput {
@@ -129,12 +168,25 @@ export interface NewPaymentInput {
 export interface LabProApi {
   auth: {
     needsSetup: () => Promise<boolean>;
-    createFirstAdmin: (username: string, password: string, fullName: string) => Promise<LoginResult>;
-    createLabAccount: (username: string, password: string, fullName: string) => Promise<LoginResult>;
     login: (username: string, password: string) => Promise<LoginResult>;
     logout: (reason?: string) => Promise<void>;
     currentUser: () => Promise<PublicUser | null>;
     changePassword: (oldPassword: string, newPassword: string) => Promise<OkResult>;
+  };
+  dev: {
+    info: () => Promise<DevInfo>;
+    lockoutStatus: () => Promise<{ lockedUntil: number | null }>;
+    login: (username: string, password: string) => Promise<DevLoginResult>;
+    logout: () => Promise<void>;
+    pickReportFolder: () => Promise<string | null>;
+    completeLabSetup: (input: LabSetupInput) => Promise<LoginResult>;
+    systemInfo: () => Promise<DevSystemInfo>;
+    listAdmins: () => Promise<PublicUser[]>;
+    resetLabAdminPassword: (userId: number, newPassword: string) => Promise<OkResult>;
+    auditLog: (filters?: AuditLogFilters) => Promise<AuditLogPageResult>;
+    openLogsFolder: () => Promise<void>;
+    dbIntegrityCheck: () => Promise<IntegrityCheckResult>;
+    resetSetup: () => Promise<OkResult>;
   };
   users: {
     list: () => Promise<PublicUser[]>;

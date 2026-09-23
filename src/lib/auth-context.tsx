@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { PublicUser } from '@/lib/types';
+import type { LabSetupInput } from '@/vite-env';
 
-type AuthPhase = 'checking' | 'needs-setup' | 'needs-lab-account' | 'locked' | 'must-change-password' | 'unlocked';
+type AuthPhase = 'checking' | 'needs-dev-setup' | 'needs-lab-setup' | 'locked' | 'must-change-password' | 'unlocked';
 
 interface LoginOutcome {
   ok: boolean;
@@ -12,12 +13,20 @@ interface LoginOutcome {
 interface AuthContextValue {
   phase: AuthPhase;
   user: PublicUser | null;
-  createFirstAdmin: (username: string, password: string, fullName: string) => Promise<LoginOutcome>;
-  createLabAccount: (username: string, password: string, fullName: string) => Promise<LoginOutcome>;
+  // Called by DeveloperSetup once its own dev:login call succeeds — moves
+  // Stage 1 (developer login) to Stage 2 (the lab setup wizard).
+  enterLabSetup: () => void;
+  completeLabSetup: (input: LabSetupInput) => Promise<LoginOutcome>;
   login: (username: string, password: string) => Promise<LoginOutcome>;
   completePasswordChange: () => void;
   logout: (reason?: string) => void;
   refreshUser: () => Promise<void>;
+  // Re-runs the same needsSetup/currentUser check the app does on launch —
+  // needed after Reset Setup (Developer Panel), which can flip
+  // setup_completed back to false while the app is still running. Without
+  // this, the window would keep showing whatever phase it resolved to at
+  // launch until the next full restart.
+  refreshPhase: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -26,49 +35,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<AuthPhase>('checking');
   const [user, setUser] = useState<PublicUser | null>(null);
 
-  useEffect(() => {
+  const refreshPhase = useCallback(async () => {
     // The main process holds the session in memory, so a fresh app launch
     // always starts logged out — this is a deliberate screen-lock-style
     // behavior, not a bug: every launch requires a real sign-in. A brand
-    // new install with no admin account yet takes priority over that: it
-    // goes to the one-time setup screen instead of a login form for an
-    // account that doesn't exist.
-    api.auth
-      .needsSetup()
-      .then((needsSetup) => {
-        if (needsSetup) {
-          setPhase('needs-setup');
-          return;
-        }
-        return api.auth.currentUser().then((current) => {
-          if (current) {
-            setUser(current);
-            setPhase('unlocked');
-          } else {
-            setPhase('locked');
-          }
-        });
-      })
-      .catch(() => setPhase('locked'));
+    // new (or not-yet-fully-set-up) install takes priority over that: it
+    // goes to the one-time Developer Setup screen instead of a login form
+    // for an account that doesn't exist yet.
+    try {
+      const needsSetup = await api.auth.needsSetup();
+      if (needsSetup) {
+        setPhase('needs-dev-setup');
+        return;
+      }
+      const current = await api.auth.currentUser();
+      if (current) {
+        setUser(current);
+        setPhase('unlocked');
+      } else {
+        setPhase('locked');
+      }
+    } catch {
+      setPhase('locked');
+    }
   }, []);
 
-  const createFirstAdmin = useCallback(async (username: string, password: string, fullName: string): Promise<LoginOutcome> => {
-    const result = await api.auth.createFirstAdmin(username, password, fullName);
-    if (!result.ok || !result.user) {
-      return { ok: false, error: result.error || 'Failed to create the admin account.' };
-    }
-    setUser(result.user);
-    setPhase(result.needsLabAccount ? 'needs-lab-account' : 'unlocked');
-    return { ok: true };
+  useEffect(() => {
+    refreshPhase();
+  }, [refreshPhase]);
+
+  const enterLabSetup = useCallback(() => {
+    setPhase('needs-lab-setup');
   }, []);
 
-  const createLabAccount = useCallback(async (username: string, password: string, fullName: string): Promise<LoginOutcome> => {
-    const result = await api.auth.createLabAccount(username, password, fullName);
+  const completeLabSetup = useCallback(async (input: LabSetupInput): Promise<LoginOutcome> => {
+    const result = await api.dev.completeLabSetup(input);
     if (!result.ok || !result.user) {
-      return { ok: false, error: result.error || 'Failed to create the lab account.' };
+      return { ok: false, error: result.error || 'Failed to finish setup.' };
     }
-    setUser(result.user);
-    setPhase('unlocked');
+    // Hands off to the normal Login screen rather than signing the new
+    // admin in automatically — the first thing that happens on this
+    // install is a real login with the credentials just chosen.
+    setPhase('locked');
     return { ok: true };
   }, []);
 
@@ -78,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: result.error || 'Invalid username or password.' };
     }
     setUser(result.user);
-    setPhase(result.needsLabAccount ? 'needs-lab-account' : result.mustChangePassword ? 'must-change-password' : 'unlocked');
+    setPhase(result.mustChangePassword ? 'must-change-password' : 'unlocked');
     return { ok: true };
   }, []);
 
@@ -101,7 +109,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (current) setUser(current);
   }, []);
 
-  const value: AuthContextValue = { phase, user, createFirstAdmin, createLabAccount, login, completePasswordChange, logout, refreshUser };
+  const value: AuthContextValue = {
+    phase,
+    user,
+    enterLabSetup,
+    completeLabSetup,
+    login,
+    completePasswordChange,
+    logout,
+    refreshUser,
+    refreshPhase,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
