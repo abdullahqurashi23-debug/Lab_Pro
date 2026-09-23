@@ -102,7 +102,11 @@ async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFo
     if (url !== templateUrl(hashPath)) event.preventDefault();
   });
   try {
-    await win.loadURL(templateUrl(hashPath));
+    // loadURL() itself has no built-in timeout either — a renderer that
+    // never fires did-finish-load/did-fail-load (a crashed GPU process, a
+    // wedged network service) would hang here before either of the two
+    // timeouts below ever got a chance to run.
+    await withTimeout(win.loadURL(templateUrl(hashPath)), 20000, 'Loading the print page timed out after 20 seconds.');
     await waitForPrintReady(win);
     // printToPDF() has no built-in timeout of its own — on some machines
     // (bad GPU/print-driver state, a stuck spooler) it simply never
@@ -224,8 +228,17 @@ export async function printPdfBuffer(pdfBuffer: Buffer): Promise<void> {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (event) => event.preventDefault());
   try {
-    await win.loadURL(`file://${tempPath}`);
+    await withTimeout(win.loadURL(`file://${tempPath}`), 20000, 'Loading the PDF for printing timed out after 20 seconds.');
     await new Promise((resolve) => setTimeout(resolve, 400));
+    // showInactive() renders the window without stealing focus from
+    // whatever the user was doing — some Windows printer drivers only
+    // reliably fire the print() callback for a window that has actually
+    // been shown/composited at least once; a window that's never left
+    // show:false is more likely to be the thing silently never calling
+    // back. This is the one deliberate on-screen moment in the whole
+    // print pipeline, and only for the fraction of a second before the OS
+    // print dialog itself takes over.
+    win.showInactive();
     // webContents.print() returns void, NOT a Promise — confirmed directly
     // against electron.d.ts. The previous `await win.webContents.print(...)`
     // therefore resolved immediately regardless of what actually happened,

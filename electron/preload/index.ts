@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('api', {
     updateDraft: (reportId: number, payload: unknown) => ipcRenderer.invoke('reports:updateDraft', reportId, payload),
     finalize: (reportId: number) => ipcRenderer.invoke('reports:finalize', reportId),
     retryArchive: (reportId: number) => ipcRenderer.invoke('reports:retryArchive', reportId),
+    findMissingPdfs: () => ipcRenderer.invoke('reports:findMissingPdfs'),
+    regenerateMissingPdfs: () => ipcRenderer.invoke('reports:regenerateMissingPdfs'),
     verifyPdf: () => ipcRenderer.invoke('reports:verifyPdf'),
     deleteDraft: (reportId: number) => ipcRenderer.invoke('reports:deleteDraft', reportId),
     getById: (reportId: number) => ipcRenderer.invoke('reports:getById', reportId),

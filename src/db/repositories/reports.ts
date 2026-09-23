@@ -273,6 +273,19 @@ export function setReportPdfInfo(db: Database.Database, reportId: number, pdfPat
   db.prepare('UPDATE reports SET pdf_path = ?, pdf_sha256 = ? WHERE id = ?').run(pdfPath, sha256, reportId);
 }
 
+// Every finalized report's id/report_no/pdf_path — the caller (Settings'
+// "Regenerate Missing PDFs" tool) checks fs.existsSync(pdf_path) itself
+// (not available at the SQL level) to find which ones are actually
+// missing, including a path that WAS valid once but whose file was later
+// moved or deleted. A repair only ever calls setReportPdfInfo — never
+// touches results, prices, or status — so a finalized report's medical/
+// billing content is provably unchanged by running this.
+export function listFinalizedReportsForPdfCheck(db: Database.Database): { id: number; report_no: string; pdf_path: string }[] {
+  return db
+    .prepare("SELECT id, report_no, pdf_path FROM reports WHERE status = 'FINALIZED'")
+    .all() as { id: number; report_no: string; pdf_path: string }[];
+}
+
 // Used by the Settings > Verify Report tool: given a hash computed from a
 // PDF file the user picked, find the finalized report it was originally
 // generated for (if any).

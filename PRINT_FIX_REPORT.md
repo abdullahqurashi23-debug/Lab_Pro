@@ -51,13 +51,39 @@ before signaling ready.
   `Revenue.tsx`) now say clearly when this fallback happened, instead of
   either a generic success message or a bare error.
 
-## Testing note
-I could not reproduce actual physical output completing on my own machine
-(no printer attached, running an unpackaged dev build) — I confirmed the
-underlying render pipeline works correctly up to the point of calling
-`printToPDF`/`print()`, and confirmed the new timeout and fallback behave
-correctly when that call is forced to hang. The real test is on your
-Windows machine with the real printer: click Print/Reprint and confirm
-paper comes out within a few seconds. If it doesn't, you should now get
-either a clear error or an automatically-opened PDF within 30 seconds —
-if you see neither, that's new information worth sending back.
+## Round 2: a specific report confirmed broken, and a deeper finding
+
+A real report (`LAB-2026-000001`) was confirmed `FINALIZED` with an empty
+`pdf_path` — exactly the failure mode above, on a report created before
+the round 1 fix. Two things were added:
+
+- **`src/db/repositories/reports.ts` / `electron/main/index.ts`**: a
+  "Regenerate Missing PDFs" tool (Settings → Regenerate Missing PDFs) that
+  finds every finalized report with no PDF (or a PDF file that's since
+  gone missing) and re-renders it from that report's own already-locked
+  data. Only `pdf_path`/`pdf_sha256` are ever written — results, prices,
+  and status are untouched, so a repair cannot alter a locked report's
+  content.
+- **`electron/main/index.ts`**: `print:openPdf`/`print:openFolder` no
+  longer throw a raw "file not found" error — they return a structured
+  result the UI turns into a message with a one-click "Regenerate" action.
+- **`electron/print.ts`**: added `showInactive()` before the actual
+  `print()` call (some Windows printer drivers only reliably fire the
+  print callback for a window that's actually been composited once), and
+  a timeout around `loadURL()` itself, not just `printToPDF()`/`print()`
+  — a hang here previously had no protection at all.
+
+**Deeper finding, tested but not resolved on this machine**: re-running
+the repair tool against the same broken report, I reproduced the exact
+same hang, including after fully killing every related process and
+retrying from a clean state (so it isn't leftover-process buildup). Even
+with all of the above timeouts in place, the operation never returned.
+That specifically means the block is happening below the JavaScript layer
+— somewhere a `Promise.race`-based timeout can't reach, most likely in the
+native BrowserWindow/renderer/GPU bridge itself. This same machine printed
+GPU/graphics-driver errors (`EGL ... eglQueryDeviceAttribEXT`) the very
+first time the app was launched this session, before any print code had
+been touched — consistent with a broken graphics stack on this specific
+Mac, not a logic bug in the fix. I do not have a way to fix a native-level
+hang from application code, and no way to confirm this doesn't affect the
+Windows machine without testing there directly.

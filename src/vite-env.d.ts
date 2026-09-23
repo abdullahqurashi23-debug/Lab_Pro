@@ -188,6 +188,8 @@ export interface LabProApi {
     updateDraft: (reportId: number, input: NewReportInput) => Promise<ReportWithDetails>;
     finalize: (reportId: number) => Promise<ReportWithDetails>;
     retryArchive: (reportId: number) => Promise<ReportWithDetails>;
+    findMissingPdfs: () => Promise<{ id: number; report_no: string; pdf_path: string }[]>;
+    regenerateMissingPdfs: () => Promise<{ id: number; reportNo: string; success: boolean; error?: string }[]>;
     verifyPdf: () => Promise<VerifyPdfResult>;
     deleteDraft: (reportId: number) => Promise<{ deleted: boolean }>;
     getById: (reportId: number) => Promise<ReportWithDetails | null>;
@@ -243,8 +245,8 @@ export interface LabProApi {
     report: (reportId: number, mode: 'paper' | 'pdf') => Promise<PrintResult>;
     savePdf: (reportId: number) => Promise<FileOpResult>;
     testPage: () => Promise<PrintResult>;
-    openPdf: (reportId: number) => Promise<{ success: boolean }>;
-    openFolder: (reportId: number) => Promise<{ success: boolean }>;
+    openPdf: (reportId: number) => Promise<{ success: boolean; missingPdf?: boolean }>;
+    openFolder: (reportId: number) => Promise<{ success: boolean; missingPdf?: boolean }>;
   };
 }
 

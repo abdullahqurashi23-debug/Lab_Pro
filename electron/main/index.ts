@@ -711,6 +711,43 @@ handle('reports:retryArchive', async (_e, reportId) => {
   await archiveReportPdf(report);
   return reportsRepo.getReportById(db(), id) as ReportWithDetails;
 });
+
+function findMissingPdfReportIds(): number[] {
+  return reportsRepo
+    .listFinalizedReportsForPdfCheck(db())
+    .filter((r) => !r.pdf_path || !fs.existsSync(r.pdf_path))
+    .map((r) => r.id);
+}
+
+handle('reports:findMissingPdfs', () => {
+  requireAdmin();
+  const ids = findMissingPdfReportIds();
+  return reportsRepo.listFinalizedReportsForPdfCheck(db()).filter((r) => ids.includes(r.id));
+});
+
+// Settings > "Regenerate Missing PDFs" — repairs any FINALIZED report
+// whose PDF never got archived (or whose file was later lost) by
+// re-rendering it from the report's own already-locked data and calling
+// setReportPdfInfo, the exact same narrow write reports:retryArchive uses
+// for one report at a time. Never touches results, prices, discounts, or
+// status — the report's content is provably identical before and after.
+handle('reports:regenerateMissingPdfs', async () => {
+  requireAdmin();
+  const ids = findMissingPdfReportIds();
+  const results: { id: number; reportNo: string; success: boolean; error?: string }[] = [];
+  for (const id of ids) {
+    const report = reportsRepo.getReportById(db(), id);
+    if (!report) continue;
+    try {
+      await archiveReportPdf(report);
+      results.push({ id, reportNo: report.report_no, success: true });
+    } catch (err) {
+      results.push({ id, reportNo: report.report_no, success: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  audit('UPDATE', 'report', null, { regeneratedPdfs: results.filter((r) => r.success).length, failed: results.filter((r) => !r.success).length });
+  return results;
+});
 handle('reports:verifyPdf', async () => {
   requireAdmin();
   if (!mainWindow) return { success: false, error: 'No window.' };
@@ -1064,9 +1101,8 @@ handle('print:openPdf', async (_e, reportId) => {
   requireAuth();
   const id = idSchema.parse(reportId);
   const report = reportsRepo.getReportById(db(), id);
-  if (!report || !report.pdf_path) throw new Error('No saved PDF for this report yet.');
-  if (!fs.existsSync(report.pdf_path)) {
-    throw new Error('The saved PDF file could not be found on disk — it may have been moved or deleted.');
+  if (!report || !report.pdf_path || !fs.existsSync(report.pdf_path)) {
+    return { success: false, missingPdf: true };
   }
   // shell.openPath NEVER rejects — confirmed against electron.d.ts, it
   // always resolves, with an empty string on success or an error message
@@ -1082,9 +1118,8 @@ handle('print:openFolder', (_e, reportId) => {
   requireAuth();
   const id = idSchema.parse(reportId);
   const report = reportsRepo.getReportById(db(), id);
-  if (!report || !report.pdf_path) throw new Error('No saved PDF for this report yet.');
-  if (!fs.existsSync(report.pdf_path)) {
-    throw new Error('The saved PDF file could not be found on disk — it may have been moved or deleted.');
+  if (!report || !report.pdf_path || !fs.existsSync(report.pdf_path)) {
+    return { success: false, missingPdf: true };
   }
   shell.showItemInFolder(report.pdf_path);
   return { success: true };

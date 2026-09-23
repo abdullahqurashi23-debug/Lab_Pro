@@ -76,20 +76,21 @@ export default function Sidebar() {
         collapsed ? 'w-16' : 'w-64'
       )}
     >
-      <div className={cn('px-4 py-5 border-b border-white/10', collapsed && 'px-3')}>
-        <div className={cn('flex items-center gap-2.5', collapsed && 'justify-center')}>
-          <div className="h-9 w-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-            <FlaskConical className="h-4 w-4" />
+      <div className={cn('relative px-4 py-5', collapsed && 'px-3')}>
+        <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
+          <div className="relative h-10 w-10 shrink-0 rounded-xl bg-gradient-to-br from-white/25 via-white/10 to-transparent shadow-md shadow-black/20 ring-1 ring-white/25 flex items-center justify-center">
+            <FlaskConical className="h-5 w-5 drop-shadow-sm" strokeWidth={2.25} />
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold tracking-[0.15em] uppercase text-primary-foreground/55">
+              <div className="text-[10px] font-bold tracking-[0.2em] uppercase text-primary-foreground/60">
                 Laboratory System
               </div>
-              <div className="text-[15px] font-bold leading-snug break-words">{clinicName || 'Loading…'}</div>
+              <div className="text-[16px] font-bold leading-snug tracking-tight break-words">{clinicName || 'Loading…'}</div>
             </div>
           )}
         </div>
+        <div className="absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
       </div>
 
       <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">

@@ -723,6 +723,86 @@ function VerifyReportSection() {
   );
 }
 
+interface PdfRepairResult {
+  id: number;
+  reportNo: string;
+  success: boolean;
+  error?: string;
+}
+
+function RegenerateMissingPdfsSection() {
+  const [scanning, setScanning] = useState(false);
+  const [missingCount, setMissingCount] = useState<number | null>(null);
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<PdfRepairResult[] | null>(null);
+
+  const scan = async () => {
+    setScanning(true);
+    setResults(null);
+    try {
+      const missing = await api.reports.findMissingPdfs();
+      setMissingCount(missing.length);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to check for missing PDFs.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const regenerate = async () => {
+    setRunning(true);
+    try {
+      const repaired = await api.reports.regenerateMissingPdfs();
+      setResults(repaired);
+      setMissingCount(repaired.filter((r) => !r.success).length);
+      const succeeded = repaired.filter((r) => r.success).length;
+      if (succeeded > 0) toast.success(`${succeeded} PDF${succeeded === 1 ? '' : 's'} regenerated.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to regenerate PDFs.');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Finds every finalized report whose PDF was never saved (or whose file was later moved or deleted) and
+        regenerates it from that report's own already-locked data. Only the PDF file and its saved path are touched —
+        results, prices, and the finalized status are never changed.
+      </p>
+      <div className="flex items-center gap-3">
+        <Button variant="outline" onClick={scan} disabled={scanning || running}>
+          {scanning ? 'Checking…' : 'Check for Missing PDFs'}
+        </Button>
+        {missingCount !== null && missingCount > 0 && (
+          <Button onClick={regenerate} disabled={running}>
+            {running ? 'Regenerating…' : `Regenerate ${missingCount} Missing PDF${missingCount === 1 ? '' : 's'}`}
+          </Button>
+        )}
+        {missingCount === 0 && <span className="text-sm text-success">Every finalized report has its PDF.</span>}
+      </div>
+
+      {results && (
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {results.map((r) => (
+            <li key={r.id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <span>{r.reportNo}</span>
+              {r.success ? (
+                <span className="text-success">Regenerated</span>
+              ) : (
+                <span className="text-destructive" title={r.error}>
+                  Failed{r.error ? `: ${r.error}` : ''}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -1017,6 +1097,11 @@ export default function Settings() {
       {isAdmin && (
         <SectionCard title="Verify Report" description="Check whether a saved PDF matches the original finalized report.">
           <VerifyReportSection />
+        </SectionCard>
+      )}
+      {isAdmin && (
+        <SectionCard title="Regenerate Missing PDFs" description="Repair finalized reports whose permanent PDF copy never got saved.">
+          <RegenerateMissingPdfsSection />
         </SectionCard>
       )}
       <SectionCard title="Security" description="Change the password for your own account.">
