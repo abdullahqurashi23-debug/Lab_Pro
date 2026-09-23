@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -184,6 +184,19 @@ app.on('before-quit', (event) => {
     .catch((err) => console.error('Backup on quit failed:', err))
     .finally(() => app.quit());
 });
+
+// LabCore has no use for Electron's default File/Edit/View/Window/Help
+// menu bar — it's dead weight on an app with its own fully custom UI. On
+// Windows it's also actively harmful: that menu bar treats Alt as its
+// "activate keyboard menu navigation" key, which can swallow the Alt in
+// any Alt-containing shortcut (e.g. Ctrl+Shift+Alt+D for Developer Access)
+// before it ever reaches the renderer's own keydown listener. Removing the
+// menu entirely removes that interference. macOS still gets an app menu
+// automatically (needed for Cmd+Q/Cmd+C etc. to work at all there), so
+// this is scoped to Windows/Linux only.
+if (process.platform !== 'darwin') {
+  Menu.setApplicationMenu(null);
+}
 
 app.whenReady().then(async () => {
   // Initialize the database (creates file + schema on first run) and
