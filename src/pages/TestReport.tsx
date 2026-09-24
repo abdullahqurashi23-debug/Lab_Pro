@@ -3,6 +3,7 @@ import { Printer, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { RevenueGranularity, TestReportResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -25,12 +26,15 @@ export default function TestReport() {
 
   const filters = { granularity };
 
-  const refresh = () => {
-    setLoading(true);
+  // `silent` = a background refresh (see useLiveRefresh): no loading state,
+  // no error popup, and the table stays as-is if it fails.
+  const refresh = (silent = false) => {
+    if (!silent) setLoading(true);
     api.testReport
       .period(filters)
       .then(setReport)
       .catch((err) => {
+        if (silent) return;
         setReport(null);
         showErrorDialog(err instanceof Error ? err.message : 'Failed to load the test report.');
       })
@@ -41,6 +45,7 @@ export default function TestReport() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [granularity]);
+  useLiveRefresh(() => refresh(true));
 
   const printReport = async () => {
     setBusy('print');
@@ -79,7 +84,7 @@ export default function TestReport() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Test Report</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Every finalized report in the period, with patient, tests, referring doctor, and billing — ready to print.
+            Every saved report in the period (drafts included), with patient, tests, referring doctor, and billing — ready to print.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -113,7 +118,7 @@ export default function TestReport() {
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            {report.from === report.to ? report.from : `${report.from} to ${report.to}`} — {report.rows.length} finalized report
+            {report.from === report.to ? report.from : `${report.from} to ${report.to}`} — {report.rows.length} report
             {report.rows.length === 1 ? '' : 's'}
           </p>
 
@@ -143,7 +148,7 @@ export default function TestReport() {
                 {report.rows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No finalized reports in this period.
+                      No reports in this period.
                     </TableCell>
                   </TableRow>
                 )}

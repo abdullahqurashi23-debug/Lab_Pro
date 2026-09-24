@@ -1,3 +1,4 @@
+import { localDate, localDateTime } from '@/lib/localTime';
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
@@ -139,7 +140,7 @@ function ClinicInfoSection() {
       </div>
       {field('address', 'Address')}
       <div className="grid grid-cols-2 gap-4">
-        {field('pathologist_name', 'Pathologist Name (shown under the signature line on reports)')}
+        {field('pathologist_name', 'Pathologist Name (printed at the bottom of every report, just above the footer)')}
         <div className="space-y-1.5">
           <Label>Report Number Prefix</Label>
           <Input
@@ -543,6 +544,96 @@ function PrintLayoutPreview({ layout }: { layout: PrintLayout }) {
   );
 }
 
+// Which printer reports go to. Works with any printer installed in Windows
+// (laser, inkjet, network…); "Windows default" follows whatever printer is
+// the default in Windows at the time of printing.
+const DEFAULT_PRINTER = '__default__';
+
+function PrinterSection() {
+  const [printers, setPrinters] = useState<{ name: string; displayName: string; isDefault: boolean }[] | null>(null);
+  const [selected, setSelected] = useState(DEFAULT_PRINTER);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setError(null);
+    setPrinters(null);
+    Promise.all([api.print.listPrinters(), api.appSettings.get('printer_name')])
+      .then(([list, saved]) => {
+        setPrinters(list ?? []);
+        setSelected(saved || DEFAULT_PRINTER);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load printers.'));
+  };
+  useEffect(load, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.appSettings.set('printer_name', selected === DEFAULT_PRINTER ? '' : selected);
+      toast.success('Printer saved.');
+    } catch (err) {
+      showErrorDialog(err instanceof Error ? err.message : 'Failed to save printer.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="text-sm text-destructive space-y-2">
+        <p>{error}</p>
+        <Button variant="outline" size="sm" onClick={load}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (!printers) return <div className="text-muted-foreground text-sm">Loading printers…</div>;
+
+  const windowsDefault = printers.find((p) => p.isDefault);
+  // A saved printer that has since been removed from Windows is still
+  // shown, so it's obvious why printing to it fails.
+  const missing = selected !== DEFAULT_PRINTER && !printers.some((p) => p.name === selected);
+
+  return (
+    <div className="space-y-3 max-w-xl">
+      <div className="space-y-1.5">
+        <Label>Print reports to</Label>
+        <Select value={selected} onValueChange={setSelected}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={DEFAULT_PRINTER}>
+              Windows default printer{windowsDefault ? ` (currently ${windowsDefault.displayName})` : ''}
+            </SelectItem>
+            {printers.map((p) => (
+              <SelectItem key={p.name} value={p.name}>
+                {p.displayName}
+              </SelectItem>
+            ))}
+            {missing && <SelectItem value={selected}>{selected} (not found)</SelectItem>}
+          </SelectContent>
+        </Select>
+      </div>
+      {missing && <p className="text-xs text-destructive">This printer is no longer installed in Windows. Pick another one.</p>}
+      <div className="flex items-center gap-3">
+        <Button onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save Printer'}
+        </Button>
+        <Button variant="outline" onClick={load}>
+          Refresh List
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Any printer installed in Windows works — laser, inkjet or network. Reports print in black and white; use Print
+        Layout below to line them up with your letterhead.
+      </p>
+    </div>
+  );
+}
+
 function PrintLayoutSection() {
   const [layout, setLayout] = useState<PrintLayout | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -707,7 +798,7 @@ function VerifyReportSection() {
           <div className="font-semibold text-success">✓ Verified — this file is authentic and unmodified.</div>
           <div className="text-muted-foreground mt-1">
             Matches Report {outcome.report_no} for {outcome.patient_name}
-            {outcome.finalized_at ? `, finalized ${outcome.finalized_at.slice(0, 10)}` : ''}.
+            {outcome.finalized_at ? `, finalized ${localDate(outcome.finalized_at)}` : ''}.
           </div>
         </div>
       )}
@@ -854,7 +945,7 @@ function RestoreBackupDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Restore from {backup?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This replaces the ENTIRE current database with this backup. Everything created or changed since {backup?.createdAt.slice(0, 10)}{' '}
+            This replaces the ENTIRE current database with this backup. Everything created or changed since {backup ? localDate(backup.createdAt) : ''}{' '}
             will be lost. A safety backup of the current database is taken first, and LabCore will restart immediately
             afterward.
           </AlertDialogDescription>
@@ -973,7 +1064,7 @@ function BackupSection() {
                   <td className="px-3 py-2">
                     <BackupKindBadge kind={b.kind} />
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">{b.createdAt.slice(0, 19).replace('T', ' ')}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{localDateTime(b.createdAt)}</td>
                   <td className="px-3 py-2 text-muted-foreground">{formatBytes(b.sizeBytes)}</td>
                   <td className="px-3 py-2 text-right">
                     <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setRestoreTarget(b)}>
@@ -1085,6 +1176,11 @@ export default function Settings() {
       {canManageDoctors && (
         <SectionCard title="Technicians" description="The saved list shown in the &quot;Performed By&quot; field on New Report.">
           <TechniciansSection />
+        </SectionCard>
+      )}
+      {isAdmin && (
+        <SectionCard title="Printer" description="Choose which printer LabCore sends reports to.">
+          <PrinterSection />
         </SectionCard>
       )}
       {isAdmin && (

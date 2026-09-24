@@ -1,13 +1,17 @@
 import type Database from 'better-sqlite3';
 import { resolvePeriod } from './revenue';
+import { splitBilling } from '../billingSplit';
 import type { SaleReportLine, TestReportFilters, TestReportResult, TestReportRow } from './types';
 
-// A printable register of every finalized report in a day/week/month —
-// one row per report (not per individual test line, since discount is a
+// A printable register of every saved report in a day/week/month — one row
+// per report (not per individual test line, since discount is a
 // report-level field, not allocated per test), test names joined into one
-// column. Same FINALIZED-only, date(created_at)-based filtering as Revenue
-// (see revenue.ts's countAndRevenue) so the two reports always agree on
-// what happened in "today"/"this week"/"this month".
+// column. Drafts count too: a report is part of the permanent record as
+// soon as it's saved (see migration 015), and a registered, possibly paid
+// patient must show up even before results are finalized. Same
+// date(created_at, 'localtime')-based filtering as Revenue (see revenue.ts's
+// countAndRevenue) so the two reports always agree on what happened in
+// "today"/"this week"/"this month".
 export function getTestReportForPeriod(db: Database.Database, filters: TestReportFilters): TestReportResult {
   const { from, to } = resolvePeriod(db, filters);
 
@@ -26,9 +30,8 @@ export function getTestReportForPeriod(db: Database.Database, filters: TestRepor
        JOIN patients ON patients.id = reports.patient_id
        LEFT JOIN doctors ON doctors.id = reports.doctor_id
        LEFT JOIN report_tests ON report_tests.report_id = reports.id
-       WHERE reports.status = 'FINALIZED'
-         AND date(reports.created_at) >= date(?)
-         AND date(reports.created_at) <= date(?)
+       WHERE date(reports.created_at, 'localtime') >= date(?)
+         AND date(reports.created_at, 'localtime') <= date(?)
        GROUP BY reports.id
        ORDER BY reports.created_at ASC`
     )
@@ -57,11 +60,12 @@ export function getTestReportForPeriod(db: Database.Database, filters: TestRepor
   return { from, to, rows, totals, lines, lineTotals };
 }
 
-// One line per test (the printed "Sale Report" layout). Discount, amount
-// paid and balance are stored per report, so each report's amounts are
-// split across its tests in proportion to price. Every share is rounded
-// and the report's last test takes the rounding remainder, so the lines
-// always add up exactly to the report's own figures.
+// One line per test (the printed "Sale Report" layout), with each report's
+// discount/paid/balance split across its tests by splitBilling — the same
+// split the New Report billing panel shows on screen. "Advance" is the
+// amount paid at registration plus any later payments (payments table);
+// "Remaining" is what's still owed after those, never below zero — the
+// same outstanding-balance rule as the Dashboard and Revenue pages.
 function getSaleLines(db: Database.Database, from: string, to: string): SaleReportLine[] {
   const tests = db
     .prepare(
@@ -74,14 +78,14 @@ function getSaleLines(db: Database.Database, from: string, to: string): SaleRepo
          report_tests.price_snapshot as fee,
          reports.subtotal,
          reports.discount,
-         reports.paid,
-         reports.balance
+         reports.paid + COALESCE(p.paid_total, 0) as paid,
+         MAX(reports.balance - COALESCE(p.paid_total, 0), 0) as balance
        FROM reports
        JOIN patients ON patients.id = reports.patient_id
        JOIN report_tests ON report_tests.report_id = reports.id
-       WHERE reports.status = 'FINALIZED'
-         AND date(reports.created_at) >= date(?)
-         AND date(reports.created_at) <= date(?)
+       LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id
+       WHERE date(reports.created_at, 'localtime') >= date(?)
+         AND date(reports.created_at, 'localtime') <= date(?)
        ORDER BY reports.created_at ASC, reports.id ASC, report_tests.id ASC`
     )
     .all(from, to) as Array<{
@@ -104,17 +108,11 @@ function getSaleLines(db: Database.Database, from: string, to: string): SaleRepo
     const id = tests[i].report_id;
     while (i < tests.length && tests[i].report_id === id) group.push(tests[i++]);
 
-    const { subtotal, discount, paid, balance } = group[0];
-    const left = { discount, advance: paid, remaining: balance };
+    const shares = splitBilling(
+      group.map((t) => t.fee),
+      group[0]
+    );
     group.forEach((t, idx) => {
-      const last = idx === group.length - 1;
-      const share = (amount: number) => (subtotal > 0 ? Math.round((amount * t.fee) / subtotal) : 0);
-      const d = last ? left.discount : share(discount);
-      const a = last ? left.advance : share(paid);
-      const r = last ? left.remaining : share(balance);
-      left.discount -= d;
-      left.advance -= a;
-      left.remaining -= r;
       lines.push({
         report_id: t.report_id,
         report_no: t.report_no,
@@ -122,9 +120,9 @@ function getSaleLines(db: Database.Database, from: string, to: string): SaleRepo
         patient_name: t.patient_name,
         test_name: t.test_name,
         fee: t.fee,
-        discount: d,
-        advance: a,
-        remaining: r,
+        discount: shares[idx].discount,
+        advance: shares[idx].advance,
+        remaining: shares[idx].remaining,
       });
     });
   }

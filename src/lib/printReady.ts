@@ -1,5 +1,9 @@
 import { PAPER_SIZES_MM, type PrintLayout } from '@/db/printLayout';
 
+// Print font matching the lab's existing paper reports (Calibri, installed
+// on every Windows PC), with fallbacks.
+export const PRINT_FONT = "Calibri, Carlito, 'Segoe UI', Arial, sans-serif";
+
 // Shared "is this page actually ready to be captured by printToPDF"
 // signal, used by every print-template route (PrintTemplateRoute,
 // TestReportPrintTemplate, RevenuePrintTemplate, AlignmentTestPage).

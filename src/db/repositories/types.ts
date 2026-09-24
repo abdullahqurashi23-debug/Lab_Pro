@@ -23,6 +23,8 @@ export type AgeUnit = 'Years' | 'Months' | 'Days';
 export type Gender = 'Male' | 'Female' | 'Other';
 
 export interface Patient {
+  // Mr., Mrs., Miss, Ms., Master, Baby, Dr. — or empty.
+  title: string;
   id: number;
   patient_code: string;
   full_name: string;
@@ -166,6 +168,7 @@ export interface Payment {
 }
 
 export interface ReportWithDetails extends Report {
+  patient_title: string;
   patient_name: string;
   patient_code: string;
   age: number | null;
@@ -227,6 +230,7 @@ export interface NewReportTestInput {
 export interface NewReportInput {
   patient: {
     id?: number; // reuse an existing patient instead of creating a new one
+    title?: string;
     full_name: string;
     age: number | null;
     age_unit: AgeUnit;

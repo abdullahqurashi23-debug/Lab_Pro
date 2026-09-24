@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { Plus, KeyRound, ShieldOff, ShieldCheck, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import { useAuth } from '@/lib/auth-context';
 import type { PublicUser, Role } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ export default function Users() {
   useEffect(() => {
     refresh();
   }, []);
+  useLiveRefresh(refresh);
 
   if (me && me.role !== 'ADMIN') {
     return (

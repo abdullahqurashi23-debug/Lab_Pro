@@ -1,3 +1,4 @@
+import { localDate } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import {
   ComposedChart,
@@ -16,6 +17,7 @@ import { FileSpreadsheet, FileText, Printer, TrendingUp, TrendingDown } from 'lu
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,18 +43,27 @@ const CATEGORY_COLORS = [
   'hsl(340 60% 55%)',
 ];
 
+// Local calendar dates. toISOString() is UTC, which in Afghanistan
+// (UTC+4:30) turned "1 September" into "2026-08-31" and gave yesterday's
+// date between midnight and 04:30.
+function localIso(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localIso(new Date());
 }
 function monthStartIso() {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  return localIso(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
 function formatBucketLabel(bucket: string, granularity: RevenueGranularity): string {
   if (granularity === 'yearly') return bucket;
   if (granularity === 'monthly' || (granularity === 'custom' && bucket.length === 7)) {
-    return new Date(`${bucket}-01`).toLocaleString('en-US', { month: 'short', year: '2-digit' });
+    // Built from its parts in local time: new Date('2026-09-01') is UTC
+    // midnight, which west of UTC is still August ("Aug 26" for Sep 2026).
+    const [y, m] = bucket.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short', year: '2-digit' });
   }
   return bucket.slice(5); // MM-DD
 }
@@ -77,7 +88,7 @@ function ChangeBadge({ pct, comparisonLabel }: { pct: number | null; comparisonL
 
 function BreakdownTable({ rows, labelHeader }: { rows: { label: string; revenue: number; count: number }[] | undefined; labelHeader: string }) {
   const safeRows = rows || [];
-  if (safeRows.length === 0) return <p className="text-sm text-muted-foreground">No finalized reports in this period.</p>;
+  if (safeRows.length === 0) return <p className="text-sm text-muted-foreground">No reports in this period.</p>;
   return (
     <Table>
       <TableHeader>
@@ -112,12 +123,15 @@ export default function Revenue() {
 
   const filters = { granularity, from: granularity === 'custom' ? customFrom : undefined, to: granularity === 'custom' ? customTo : undefined };
 
-  const refreshReport = () => {
-    setLoading(true);
+  // `silent` = a background refresh (see useLiveRefresh): no loading state,
+  // no error popup, and the page stays as-is if it fails.
+  const refreshReport = (silent = false) => {
+    if (!silent) setLoading(true);
     api.revenue
       .period(filters)
       .then(setReport)
       .catch((err) => {
+        if (silent) return;
         setReport(null);
         showErrorDialog(err instanceof Error ? err.message : 'Failed to load revenue data.');
       })
@@ -137,6 +151,10 @@ export default function Revenue() {
   useEffect(() => {
     refreshOutstanding();
   }, []);
+  useLiveRefresh(() => {
+    refreshReport(true);
+    refreshOutstanding();
+  });
 
   const comparisonLabel = GRANULARITY_OPTIONS.find((o) => o.value === granularity)?.comparisonLabel || 'vs previous period';
 
@@ -187,7 +205,7 @@ export default function Revenue() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Revenue</h1>
-          <p className="text-muted-foreground text-sm mt-1">Only finalized reports count toward revenue.</p>
+          <p className="text-muted-foreground text-sm mt-1">Every saved report counts toward revenue, drafts included.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={printReport} disabled={exporting !== null || !report}>
@@ -251,7 +269,7 @@ export default function Revenue() {
             </Card>
             <Card className="flex-1 min-w-[220px]">
               <CardContent className="p-5">
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Finalized Reports</div>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reports</div>
                 <div className="text-3xl font-bold mt-2 text-foreground">{report.current.count}</div>
                 <div className="mt-1">
                   <ChangeBadge pct={report.changePct.count} comparisonLabel={comparisonLabel} />
@@ -272,7 +290,7 @@ export default function Revenue() {
             </CardHeader>
             <CardContent>
               {trendData.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No finalized reports in this range.</p>
+                <p className="text-sm text-muted-foreground">No reports in this range.</p>
               ) : (
                 <div style={{ width: '100%', height: 300 }}>
                   <ResponsiveContainer>
@@ -326,7 +344,7 @@ export default function Revenue() {
               </CardHeader>
               <CardContent>
                 {(report.byCategory || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No finalized reports in this period.</p>
+                  <p className="text-sm text-muted-foreground">No reports in this period.</p>
                 ) : (
                   <div style={{ width: '100%', height: 220 }}>
                     <ResponsiveContainer>
@@ -381,7 +399,7 @@ export default function Revenue() {
                   <TableCell className="font-medium">{o.report_no}</TableCell>
                   <TableCell>{o.patient_name}</TableCell>
                   <TableCell className="text-muted-foreground">{o.patient_phone || '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{o.finalized_at ? o.finalized_at.slice(0, 10) : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{o.finalized_at ? localDate(o.finalized_at) : '—'}</TableCell>
                   <TableCell className="text-right">{fmt(o.total)}</TableCell>
                   <TableCell className="text-right">{fmt(o.paid_total)}</TableCell>
                   <TableCell className="text-right text-destructive font-semibold">{fmt(o.balance)}</TableCell>

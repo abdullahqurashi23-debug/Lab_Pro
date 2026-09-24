@@ -115,7 +115,10 @@ export const technicianInputSchema = z.object({
 });
 
 // ---------- Patients ----------
+export const patientTitleSchema = z.enum(['', 'Mr.', 'Mrs.', 'Miss', 'Ms.', 'Master', 'Baby', 'Dr.']);
+
 export const patientInputSchema = z.object({
+  title: patientTitleSchema.optional().default(''),
   full_name: z.string().trim().min(1, 'Patient name is required').max(200),
   age: z.number().int().nonnegative().max(150).nullable(),
   age_unit: z.enum(['Years', 'Months', 'Days']),
@@ -214,6 +217,7 @@ export const reportTestInputSchema = z.object({
 export const reportInputSchema = z.object({
   patient: z.object({
     id: idSchema.optional(),
+    title: patientTitleSchema.optional(),
     full_name: z.string().trim().min(1, 'Patient name is required').max(200),
     age: z.number().int().nonnegative().max(150).nullable(),
     age_unit: z.enum(['Years', 'Months', 'Days']),
@@ -227,7 +231,9 @@ export const reportInputSchema = z.object({
   payment_method: z.string().trim().max(50).optional().default(''),
   notes: z.string().trim().max(2000).optional().default(''),
   performed_by: z.string().trim().max(200).optional().default(''),
-  tests: z.array(reportTestInputSchema).min(1, 'At least one test is required'),
+  // May be empty: registering a patient saves the draft right away, before
+  // any test is added. finalizeReport refuses to lock a report with no tests.
+  tests: z.array(reportTestInputSchema),
 });
 
 export const reportListFiltersSchema = z

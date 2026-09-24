@@ -1,3 +1,4 @@
+import { localDateTime } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { ShieldAlert, FolderOpen, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -224,7 +225,7 @@ export default function DeveloperPanel({ onClose }: { onClose: () => void }) {
                   {auditRows.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {r.created_at.slice(0, 19).replace('T', ' ')}
+                        {localDateTime(r.created_at)}
                       </TableCell>
                       <TableCell>{r.user_full_name || <span className="text-muted-foreground">System</span>}</TableCell>
                       <TableCell className="font-medium">{r.action}</TableCell>

@@ -110,4 +110,15 @@
   #print-area {
     background: white !important;
   }
+
+  /* Dark, crisp text on a basic black-and-white laser printer. Grey text
+     prints as a dotted halftone and thin font strokes print faint, so on
+     paper every piece of text is forced to solid black and given a thin
+     black outline that thickens each letter slightly (like a semi-bold). */
+  body,
+  body * {
+    color: #000 !important;
+    -webkit-text-stroke: 0.25px #000;
+    -webkit-font-smoothing: none;
+  }
 }

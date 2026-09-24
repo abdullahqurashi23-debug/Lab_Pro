@@ -8,13 +8,13 @@ import type {
   RevenuePeriodReport,
 } from './types';
 
-// All period math happens inside SQLite (date('now', ...)) rather than in
-// JS with `new Date()`, deliberately — SQLite's date('now') is UTC, and so
-// is every `created_at`/`finalized_at` timestamp already stamped elsewhere
-// in this app (datetime('now')). Computing boundaries in JS local time
-// instead would silently drift by a day near midnight depending on the
-// machine's timezone. One query up front gets every anchor date this
-// module could need, all in that same UTC "now" frame.
+// All period math happens inside SQLite, in the lab computer's LOCAL time:
+// timestamps are stored in UTC (datetime('now')), and both "now" and every
+// created_at are converted with the 'localtime' modifier before comparing.
+// Comparing in UTC instead put anything registered between local midnight
+// and the UTC offset (00:00–04:30 in Afghanistan) on the previous day's
+// daily report. One query up front gets every anchor date this module
+// could need, all in that same local "now" frame.
 interface PeriodAnchors {
   today: string;
   yesterday: string;
@@ -37,27 +37,27 @@ function getAnchors(db: Database.Database): PeriodAnchors {
   return db
     .prepare(
       `SELECT
-        date('now') as today,
-        date('now','-1 day') as yesterday,
+        date('now','localtime') as today,
+        date('now','localtime','-1 day') as yesterday,
         -- Monday-Sunday calendar week, not a rolling trailing 7 days.
         -- strftime('%w') is 0=Sunday..6=Saturday; (%w + 6) % 7 gives the
         -- number of days since the most recent Monday (0 when today
         -- already is Monday) — the same expression BUCKET_EXPR.week below
         -- already uses to group the trend chart into Monday-start weeks,
         -- so "this week" now means the same thing everywhere in this file.
-        date('now', '-' || ((strftime('%w','now') + 6) % 7) || ' days') as week_start,
-        date('now', '-' || (((strftime('%w','now') + 6) % 7) + 1) || ' days') as prev_week_end,
-        date('now', '-' || (((strftime('%w','now') + 6) % 7) + 7) || ' days') as prev_week_start,
-        date('now','start of month') as month_start,
-        date('now','start of month','-1 month') as prev_month_start,
-        date('now','start of month','-1 day') as prev_month_end,
-        date('now','start of year') as year_start,
-        date('now','start of year','-1 year') as prev_year_start,
-        date('now','start of year','-1 day') as prev_year_end,
-        date('now','-29 days') as trend30_start,
-        date('now','-83 days') as trend12w_start,
-        date('now','start of month','-11 months') as trend12m_start,
-        date('now','start of year','-4 years') as trend5y_start`
+        date('now','localtime', '-' || ((strftime('%w','now','localtime') + 6) % 7) || ' days') as week_start,
+        date('now','localtime', '-' || (((strftime('%w','now','localtime') + 6) % 7) + 1) || ' days') as prev_week_end,
+        date('now','localtime', '-' || (((strftime('%w','now','localtime') + 6) % 7) + 7) || ' days') as prev_week_start,
+        date('now','localtime','start of month') as month_start,
+        date('now','localtime','start of month','-1 month') as prev_month_start,
+        date('now','localtime','start of month','-1 day') as prev_month_end,
+        date('now','localtime','start of year') as year_start,
+        date('now','localtime','start of year','-1 year') as prev_year_start,
+        date('now','localtime','start of year','-1 day') as prev_year_end,
+        date('now','localtime','-29 days') as trend30_start,
+        date('now','localtime','-83 days') as trend12w_start,
+        date('now','localtime','start of month','-11 months') as trend12m_start,
+        date('now','localtime','start of year','-4 years') as trend5y_start`
     )
     .get() as PeriodAnchors;
 }
@@ -75,7 +75,7 @@ export interface ResolvedPeriod {
 // Exported so other period-based reports (e.g. the daily/weekly/monthly
 // Test Report) resolve "today"/"this week"/"this month" identically to
 // Revenue — a single source of truth for what those words mean, all
-// computed in SQLite's own UTC `date('now')` rather than JS Date (see the
+// computed in SQLite's `date('now','localtime')` rather than JS Date (see the
 // getAnchors comment above for why that matters).
 export function resolvePeriod(db: Database.Database, filters: RevenuePeriodFilters): ResolvedPeriod {
   const a = getAnchors(db);
@@ -109,10 +109,10 @@ export function resolvePeriod(db: Database.Database, filters: RevenuePeriodFilte
 // itself computes (never taken raw from the client), so there's no
 // injection surface despite the string being spliced into a query below.
 const BUCKET_EXPR: Record<ResolvedPeriod['bucketBy'], string> = {
-  day: "date(reports.created_at)",
-  week: "date(reports.created_at, '-' || ((strftime('%w', reports.created_at) + 6) % 7) || ' days')",
-  month: "strftime('%Y-%m', reports.created_at)",
-  year: "strftime('%Y', reports.created_at)",
+  day: "date(reports.created_at, 'localtime')",
+  week: "date(reports.created_at, 'localtime', '-' || ((strftime('%w', reports.created_at, 'localtime') + 6) % 7) || ' days')",
+  month: "strftime('%Y-%m', reports.created_at, 'localtime')",
+  year: "strftime('%Y', reports.created_at, 'localtime')",
 };
 
 function countAndRevenue(db: Database.Database, from: string, to: string): { count: number; revenue: number; discounts: number } {
@@ -120,7 +120,7 @@ function countAndRevenue(db: Database.Database, from: string, to: string): { cou
     .prepare(
       `SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as revenue, COALESCE(SUM(discount), 0) as discounts
        FROM reports
-       WHERE status = 'FINALIZED' AND date(created_at) >= date(?) AND date(created_at) <= date(?)`
+       WHERE date(created_at, 'localtime') >= date(?) AND date(created_at, 'localtime') <= date(?)`
     )
     .get(from, to) as { count: number; revenue: number; discounts: number };
   return { count: row.count || 0, revenue: row.revenue || 0, discounts: row.discounts || 0 };
@@ -140,13 +140,13 @@ export function getRevenuePeriodReport(db: Database.Database, filters: RevenuePe
     .prepare(
       `SELECT ${BUCKET_EXPR[period.bucketBy]} as bucket, COALESCE(SUM(reports.total), 0) as revenue, COUNT(*) as count
        FROM reports
-       WHERE reports.status = 'FINALIZED' AND date(reports.created_at) >= date(?) AND date(reports.created_at) <= date(?)
+       WHERE date(reports.created_at, 'localtime') >= date(?) AND date(reports.created_at, 'localtime') <= date(?)
        GROUP BY bucket
        ORDER BY bucket`
     )
     .all(period.trendFrom, period.trendTo) as RevenueBucket[];
 
-  const inPeriod = "reports.status = 'FINALIZED' AND date(reports.created_at) >= date(?) AND date(reports.created_at) <= date(?)";
+  const inPeriod = "date(reports.created_at, 'localtime') >= date(?) AND date(reports.created_at, 'localtime') <= date(?)";
   const periodParams = [period.from, period.to];
 
   // Test-level breakdowns use price_snapshot (pre-discount) — a report's
@@ -253,7 +253,7 @@ export function listOutstandingBalances(db: Database.Database): OutstandingBalan
        FROM reports
        JOIN patients ON patients.id = reports.patient_id
        LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id
-       WHERE reports.status = 'FINALIZED' AND (reports.balance - COALESCE(p.paid_total, 0)) > 0.005
+       WHERE (reports.balance - COALESCE(p.paid_total, 0)) > 0.005
        ORDER BY balance DESC`
     )
     .all() as OutstandingBalanceRow[];

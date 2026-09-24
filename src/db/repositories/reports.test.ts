@@ -71,8 +71,31 @@ describe('finalized-report immutability triggers', () => {
 
   it('BLOCKS a direct SQL DELETE of a finalized report', () => {
     const finalized = setupFinalizedReport();
-    expect(() => ctx.db.prepare('DELETE FROM reports WHERE id = ?').run(finalized.id)).toThrow(/finalized and cannot be deleted/i);
+    expect(() => ctx.db.prepare('DELETE FROM reports WHERE id = ?').run(finalized.id)).toThrow(/permanent and cannot be deleted/i);
     expect(getReportById(ctx.db, finalized.id)).not.toBeNull();
+  });
+
+  it('BLOCKS deleting a DRAFT report too — every saved report is permanent', () => {
+    const test = createTest(ctx.db, { name: 'Urine Examination', short_code: 'UE', price: 100, parameters: [] });
+    const patient = createPatient(ctx.db, { full_name: 'Draft Keep', age: 42, age_unit: 'Years', gender: 'Male' });
+    const draft = createReport(
+      ctx.db,
+      {
+        patient: { id: patient.id, full_name: patient.full_name, age: patient.age, age_unit: patient.age_unit, gender: patient.gender },
+        doctor_id: null,
+        tests: [{ test_id: test.id, results: [] }],
+      },
+      null
+    );
+    expect(draft.status).toBe('DRAFT');
+    expect(() => ctx.db.prepare('DELETE FROM reports WHERE id = ?').run(draft.id)).toThrow(/permanent and cannot be deleted/i);
+    expect(getReportById(ctx.db, draft.id)).not.toBeNull();
+  });
+
+  it('BLOCKS deleting a patient', () => {
+    const patient = createPatient(ctx.db, { full_name: 'Patient Keep', age: 30, age_unit: 'Years', gender: 'Female' });
+    expect(() => ctx.db.prepare('DELETE FROM patients WHERE id = ?').run(patient.id)).toThrow(/permanent and cannot be deleted/i);
+    expect(ctx.db.prepare('SELECT id FROM patients WHERE id = ?').get(patient.id)).toBeTruthy();
   });
 
   it('BLOCKS inserting, updating, or deleting report_tests / report_results on a finalized report', () => {

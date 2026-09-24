@@ -1,3 +1,4 @@
+import { localDate } from '@/lib/localTime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -192,7 +193,7 @@ export default function PrintReport() {
             <Badge variant="warning">Draft — will be locked on print</Badge>
           ) : (
             <Badge variant="success">
-              LOCKED — finalized {report.finalized_at ? report.finalized_at.slice(0, 10) : ''}
+              LOCKED — finalized {report.finalized_at ? localDate(report.finalized_at) : ''}
               {report.finalized_by_name ? ` by ${report.finalized_by_name}` : ''}
             </Badge>
           )}

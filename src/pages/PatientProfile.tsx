@@ -1,9 +1,11 @@
+import { localDate } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { ArrowLeft } from 'lucide-react';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { Patient, ReportListRow, PatientTrendParameter, PatientParameterPoint } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -117,6 +119,9 @@ export default function PatientProfile() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [reports, setReports] = useState<ReportListRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Bumped by useLiveRefresh so new reports/payments for this patient show up.
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((t) => t + 1));
 
   useEffect(() => {
     if (!id) return;
@@ -142,7 +147,7 @@ export default function PatientProfile() {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate]);
+  }, [id, navigate, tick]);
 
   const openReport = (r: ReportListRow) => {
     navigate(r.status === 'FINALIZED' ? `/reports/${r.id}/print` : `/new-report/${r.id}`);
@@ -191,7 +196,7 @@ export default function PatientProfile() {
           </div>
           <div>
             <div className="text-muted-foreground text-xs uppercase tracking-wide">Patient Since</div>
-            <div className="font-medium mt-1">{patient.created_at.slice(0, 10)}</div>
+            <div className="font-medium mt-1">{localDate(patient.created_at)}</div>
           </div>
         </CardContent>
       </Card>
@@ -230,7 +235,7 @@ export default function PatientProfile() {
                     {r.test_names ? r.test_names.split(',').join(', ') : '—'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{r.doctor_name || '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{r.created_at.slice(0, 10)}</TableCell>
+                  <TableCell className="text-muted-foreground">{localDate(r.created_at)}</TableCell>
                   <TableCell>{fmt(r.total)}</TableCell>
                   <TableCell>
                     <StatusBadge status={r.status} />

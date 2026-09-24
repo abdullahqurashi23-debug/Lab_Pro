@@ -3,7 +3,10 @@
 // the machine's local time for printed documents.
 
 function parseUtc(ts: string): Date | null {
-  const d = new Date(`${ts.replace(' ', 'T')}Z`);
+  const iso = ts.replace(' ', 'T');
+  // SQLite timestamps carry no zone (they're UTC); JS ISO strings already
+  // end in "Z" or an offset.
+  const d = new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso : `${iso}Z`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

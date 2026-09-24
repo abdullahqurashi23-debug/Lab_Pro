@@ -1,10 +1,11 @@
+import { localDate } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { Doctor, ReportListRow, ReportSortKey } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,16 +13,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 
 type StatusFilter = 'all' | 'DRAFT' | 'FINALIZED';
 const PAGE_SIZE = 20;
@@ -33,8 +24,6 @@ function StatusBadge({ status }: { status: ReportListRow['status'] }) {
 
 export default function Reports() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const canDeleteDraft = user?.role === 'ADMIN' || user?.role === 'RECEPTION';
   const [searchParams, setSearchParams] = useSearchParams();
   const patientId = searchParams.get('patient');
 
@@ -52,7 +41,6 @@ export default function Reports() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [patientName, setPatientName] = useState<string | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -106,6 +94,7 @@ export default function Reports() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, from, to, status, doctorId, patientId, sort, page]);
+  useLiveRefresh(refresh);
 
   const toggleSort = (key: ReportSortKey) => {
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
@@ -143,19 +132,6 @@ export default function Reports() {
     navigate(r.status === 'FINALIZED' ? `/reports/${r.id}/print` : `/new-report/${r.id}`);
   };
 
-  const confirmDelete = async () => {
-    if (pendingDeleteId == null) return;
-    try {
-      await api.reports.deleteDraft(pendingDeleteId);
-      toast.success('Draft report deleted.');
-      refresh();
-    } catch (err) {
-      showErrorDialog(err instanceof Error ? err.message : 'Failed to delete report.');
-    } finally {
-      setPendingDeleteId(null);
-    }
-  };
-
   const exportToExcel = async () => {
     setExporting(true);
     try {
@@ -186,7 +162,7 @@ export default function Reports() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Reports History</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Drafts can still be edited. Once finalized, a report is locked permanently.
+            Every saved report is permanent and can't be deleted. Drafts can still be edited until finalized.
           </p>
         </div>
         <Button variant="outline" onClick={exportToExcel} disabled={exporting || total === 0}>
@@ -297,7 +273,7 @@ export default function Reports() {
                   {r.patient_name} <span className="text-muted-foreground">({r.patient_code})</span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{r.doctor_name || '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{r.created_at.slice(0, 10)}</TableCell>
+                <TableCell className="text-muted-foreground">{localDate(r.created_at)}</TableCell>
                 <TableCell>{fmt(r.total)}</TableCell>
                 <TableCell className={r.balance > 0 ? 'text-destructive' : 'text-muted-foreground'}>{fmt(r.balance)}</TableCell>
                 <TableCell>
@@ -307,16 +283,6 @@ export default function Reports() {
                   <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openReport(r)}>
                     {r.status === 'FINALIZED' ? 'View / Reprint' : 'Open / Enter Results'}
                   </Button>
-                  {r.status === 'DRAFT' && canDeleteDraft && (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 text-destructive"
-                      onClick={() => setPendingDeleteId(r.id)}
-                    >
-                      Delete
-                    </Button>
-                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -356,21 +322,6 @@ export default function Reports() {
           </div>
         )}
       </div>
-
-      <AlertDialog open={pendingDeleteId != null} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this draft report?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

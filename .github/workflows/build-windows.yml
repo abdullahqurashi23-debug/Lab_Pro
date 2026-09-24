@@ -1,9 +1,19 @@
 name: Build Windows Installer
 
-# Builds LabPro's Windows installer on a real Windows runner — required
+# Builds LabCore's Windows installers on a real Windows runner — required
 # because better-sqlite3 is a native module and cannot be cross-compiled
 # for Windows from macOS or Linux. Run manually from the Actions tab, or
 # automatically whenever a version tag is pushed.
+#
+# Two editions are built from the same code, each one installer that works
+# on both 32-bit and 64-bit Windows:
+#   - standard: Windows 10 / 11, on the current Electron.
+#   - win7:     Windows 7 / 8 / 8.1, on Electron 22 — the last Electron that
+#               runs on them (Chromium dropped Windows 7/8 in early 2023).
+#               better-sqlite3 is pinned to 9.6.0 there, the newest release
+#               with Electron 22 builds. Same app name, so the database
+#               location is identical: a lab moving from Windows 7 to 10 just
+#               installs the standard edition and keeps all its data.
 on:
   workflow_dispatch: {}
   push:
@@ -13,6 +23,14 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: standard
+            artifact: LabCore-Windows-10-11-Installer
+          - edition: win7
+            artifact: LabCore-Windows-7-8-Installer
     steps:
       - uses: actions/checkout@v4
 
@@ -23,11 +41,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and package the installer
+      - name: Build and package (standard edition)
+        if: matrix.edition == 'standard'
         run: npm run dist
+
+      - name: Build and package (Windows 7 edition)
+        if: matrix.edition == 'win7'
+        shell: bash
+        run: |
+          npm install --no-save --no-audit --no-fund electron@22.3.27 better-sqlite3@9.6.0
+          npm run build
+          npx electron-builder --publish never \
+            --config.electronVersion=22.3.27 \
+            '--config.nsis.artifactName=${productName}-Win7-Setup-${version}.${ext}'
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LabPro-Windows-Installer
+          name: ${{ matrix.artifact }}
           path: dist/*.exe

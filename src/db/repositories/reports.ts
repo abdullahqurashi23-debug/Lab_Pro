@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { computeParameterResults, type ComputedResult } from '../resultLogic';
-import { createPatient, isChildPatient, updatePatient } from './patients';
+import { createPatient, getPatientById, isChildPatient } from './patients';
 import { getTestById } from './tests';
 import { recordAudit } from './auditLog';
 import { listPaymentsForReport } from './payments';
@@ -72,22 +72,13 @@ function writeReportTests(db: Database.Database, reportId: number, input: NewRep
 
 export function createReport(db: Database.Database, input: NewReportInput, createdByUserId: number | null): ReportWithDetails {
   const txn = db.transaction(() => {
-    // An existing patient pulled in via search can still be edited (fixing
-    // a typo'd name, a wrong age, etc.) before this very first save — that
-    // edit has to actually apply here via updatePatient, not just re-fetch
-    // the patient unchanged, or it would silently vanish on first save and
-    // only start sticking from the second save onward (updateDraftReport
-    // already applies edits correctly; this keeps both paths consistent).
+    // A saved patient's details are locked (migration 016), so an existing
+    // patient picked from search is used exactly as stored; only a brand-new
+    // patient's typed-in details are written, once, here.
     const patient = input.patient.id
-      ? updatePatient(db, input.patient.id, {
-          full_name: input.patient.full_name,
-          age: input.patient.age,
-          age_unit: input.patient.age_unit,
-          gender: input.patient.gender,
-          phone: input.patient.phone,
-          address: input.patient.address,
-        })
+      ? getPatientById(db, input.patient.id)
       : createPatient(db, {
+          title: input.patient.title,
           full_name: input.patient.full_name,
           age: input.patient.age,
           age_unit: input.patient.age_unit,
@@ -160,17 +151,10 @@ export function updateDraftReport(db: Database.Database, reportId: number, input
   if (existing.status === 'FINALIZED') throw new Error('This report is finalized and cannot be edited.');
 
   const txn = db.transaction(() => {
-    // Patient details (name/age/gender/contact) can still be corrected
-    // while the report is a draft — the auto-save on the New Report page
-    // relies on this to persist fixes, not just tests and billing.
-    const patient = updatePatient(db, existing.patient_id, {
-      full_name: input.patient.full_name,
-      age: input.patient.age,
-      age_unit: input.patient.age_unit,
-      gender: input.patient.gender,
-      phone: input.patient.phone,
-      address: input.patient.address,
-    });
+    // The patient is fixed once the report is first saved — never changed
+    // or swapped here; only tests, results and billing are updated.
+    const patient = getPatientById(db, existing.patient_id);
+    if (!patient) throw new Error('Patient not found.');
     const isChild = isChildPatient(patient);
 
     const oldReportTestIds = (
@@ -242,6 +226,10 @@ export function finalizeReport(db: Database.Database, reportId: number, finalize
     | undefined;
   if (!existing) throw new Error('Report not found.');
   if (existing.status === 'FINALIZED') throw new Error('This report is already finalized.');
+  // A patient is registered (and its draft saved) before any test is added,
+  // so an empty draft is normal — but it can never be locked in that state.
+  const testCount = (db.prepare('SELECT COUNT(*) as n FROM report_tests WHERE report_id = ?').get(reportId) as { n: number }).n;
+  if (testCount === 0) throw new Error('Add at least one test before finalizing.');
 
   assertResultsComplete(db, reportId);
 
@@ -303,29 +291,10 @@ export function findReportByPdfHash(
     .get(sha256) as { report_no: string; patient_name: string; finalized_at: string | null } | undefined;
 }
 
-export function deleteDraftReport(db: Database.Database, reportId: number): { deleted: boolean } {
-  const report = db.prepare('SELECT status FROM reports WHERE id = ?').get(reportId) as { status: string } | undefined;
-  if (!report) return { deleted: false };
-  if (report.status === 'FINALIZED') throw new Error('This report is finalized and cannot be deleted.');
-
-  const txn = db.transaction(() => {
-    const reportTestIds = (
-      db.prepare('SELECT id FROM report_tests WHERE report_id = ?').all(reportId) as { id: number }[]
-    ).map((r) => r.id);
-    for (const id of reportTestIds) {
-      db.prepare('DELETE FROM report_results WHERE report_test_id = ?').run(id);
-    }
-    db.prepare('DELETE FROM report_tests WHERE report_id = ?').run(reportId);
-    db.prepare('DELETE FROM reports WHERE id = ?').run(reportId);
-  });
-  txn();
-  return { deleted: true };
-}
-
 export function getReportById(db: Database.Database, id: number): ReportWithDetails | null {
   const report = db
     .prepare(
-      `SELECT reports.*, patients.full_name as patient_name, patients.patient_code, patients.age,
+      `SELECT reports.*, patients.full_name as patient_name, patients.title as patient_title, patients.patient_code, patients.age,
               patients.age_unit, patients.gender, doctors.name as doctor_name,
               finalizer.full_name as finalized_by_name
        FROM reports
@@ -337,6 +306,7 @@ export function getReportById(db: Database.Database, id: number): ReportWithDeta
     .get(id) as
     | (Report & {
         patient_name: string;
+        patient_title: string;
         patient_code: string;
         age: number | null;
         age_unit: string;

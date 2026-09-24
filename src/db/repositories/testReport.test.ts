@@ -51,15 +51,15 @@ describe('test report — daily / weekly / monthly register', () => {
     );
   }
 
-  it('daily: lists only today\'s finalized reports, excludes yesterday and drafts', () => {
+  it('daily: lists every report saved today (drafts included), excludes yesterday', () => {
     finalizedReportOnDay(0, { price: 500 });
     finalizedReportOnDay(1, { price: 1000 }); // yesterday
-    draftReport(9999); // draft — must never appear
+    draftReport(9999); // saved today as a draft — must still appear
 
     const result = getTestReportForPeriod(ctx.db, { granularity: 'daily' });
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].subtotal).toBe(500);
-    expect(result.totals.subtotal).toBe(500);
+    expect(result.rows).toHaveLength(2);
+    expect(result.totals.subtotal).toBe(10499);
+    expect(result.lines).toHaveLength(2);
   });
 
   it('one row per report, with every test on that report joined into test_codes', () => {
@@ -135,11 +135,21 @@ describe('test report — daily / weekly / monthly register', () => {
     expect(result.lineTotals.advance + result.lineTotals.remaining).toBe(290);
   });
 
-  it('never includes a draft report at any granularity', () => {
+  it('includes a draft report at every granularity', () => {
     draftReport(123456);
     for (const granularity of ['daily', 'weekly', 'monthly'] as const) {
       const result = getTestReportForPeriod(ctx.db, { granularity });
-      expect(result.rows).toHaveLength(0);
+      expect(result.rows).toHaveLength(1);
+      expect(result.lineTotals.fee).toBe(123456);
     }
+  });
+
+  it('sale lines count later payments as advance and reduce remaining', () => {
+    const report = finalizedReportOnDay(0, { price: 200 });
+    ctx.db.prepare("INSERT INTO payments (report_id, amount, method, notes) VALUES (?, 150, 'Cash', '')").run(report.id);
+
+    const result = getTestReportForPeriod(ctx.db, { granularity: 'daily' });
+    expect(result.lines[0].advance).toBe(150);
+    expect(result.lines[0].remaining).toBe(50);
   });
 });

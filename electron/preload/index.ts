@@ -5,6 +5,17 @@ import { contextBridge, ipcRenderer } from 'electron';
 // whenever the UI needs a new backend operation — the shape here must
 // match src/vite-env.d.ts's LabProApi interface exactly.
 contextBridge.exposeInMainWorld('api', {
+  events: {
+    // Fires after any backend call that changed stored data (see
+    // MUTATING_CHANNEL in electron/main/index.ts). Returns an unsubscribe.
+    onDataChanged: (callback: (channel: string) => void) => {
+      const listener = (_e: unknown, channel: string) => callback(channel);
+      ipcRenderer.on('data:changed', listener);
+      return () => {
+        ipcRenderer.removeListener('data:changed', listener);
+      };
+    },
+  },
   auth: {
     needsSetup: () => ipcRenderer.invoke('auth:needsSetup'),
     login: (username: string, password: string) => ipcRenderer.invoke('auth:login', username, password),
@@ -51,7 +62,6 @@ contextBridge.exposeInMainWorld('api', {
     list: (search?: string) => ipcRenderer.invoke('patients:list', search),
     get: (id: number) => ipcRenderer.invoke('patients:get', id),
     create: (payload: unknown) => ipcRenderer.invoke('patients:create', payload),
-    update: (id: number, payload: unknown) => ipcRenderer.invoke('patients:update', id, payload),
     findDuplicate: (fullName: string, phone: string) => ipcRenderer.invoke('patients:findDuplicate', fullName, phone),
     trendableParameters: (patientId: number) => ipcRenderer.invoke('patients:trendableParameters', patientId),
     parameterHistory: (patientId: number, parameterName: string) =>
@@ -85,7 +95,6 @@ contextBridge.exposeInMainWorld('api', {
     findMissingPdfs: () => ipcRenderer.invoke('reports:findMissingPdfs'),
     regenerateMissingPdfs: () => ipcRenderer.invoke('reports:regenerateMissingPdfs'),
     verifyPdf: () => ipcRenderer.invoke('reports:verifyPdf'),
-    deleteDraft: (reportId: number) => ipcRenderer.invoke('reports:deleteDraft', reportId),
     getById: (reportId: number) => ipcRenderer.invoke('reports:getById', reportId),
     list: (filters?: unknown) => ipcRenderer.invoke('reports:list', filters),
     listPage: (filters?: unknown) => ipcRenderer.invoke('reports:listPage', filters),
@@ -139,6 +148,7 @@ contextBridge.exposeInMainWorld('api', {
     report: (reportId: number, mode: 'paper' | 'pdf') => ipcRenderer.invoke('print:report', reportId, mode),
     savePdf: (reportId: number) => ipcRenderer.invoke('print:savePdf', reportId),
     testPage: () => ipcRenderer.invoke('print:testPage'),
+    listPrinters: () => ipcRenderer.invoke('print:listPrinters'),
     openPdf: (reportId: number) => ipcRenderer.invoke('print:openPdf', reportId),
     openFolder: (reportId: number) => ipcRenderer.invoke('print:openFolder', reportId),
   },

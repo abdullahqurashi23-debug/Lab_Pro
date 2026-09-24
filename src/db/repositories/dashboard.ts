@@ -26,22 +26,22 @@ export function getDashboardStats(db: Database.Database): DashboardStats {
       .prepare(
         `SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as revenue
          FROM reports
-         WHERE status = 'FINALIZED' AND ${whereClause}`
+         WHERE ${whereClause}`
       )
       .get() as { count: number; revenue: number };
     return { count: row.count || 0, revenue: row.revenue || 0 };
   };
 
-  const today = countAndRevenue("date(created_at) = date('now')");
-  const week = countAndRevenue("date(created_at) >= date('now', '-6 days')");
-  const month = countAndRevenue("strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')");
+  const today = countAndRevenue("date(created_at, 'localtime') = date('now','localtime')");
+  const week = countAndRevenue("date(created_at, 'localtime') >= date('now','localtime', '-6 days')");
+  const month = countAndRevenue("strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')");
 
   const last7Days = db
     .prepare(
-      `SELECT date(created_at) as day, COUNT(*) as count
+      `SELECT date(created_at, 'localtime') as day, COUNT(*) as count
        FROM reports
-       WHERE status = 'FINALIZED' AND date(created_at) >= date('now', '-6 days')
-       GROUP BY date(created_at)
+       WHERE date(created_at, 'localtime') >= date('now','localtime', '-6 days')
+       GROUP BY date(created_at, 'localtime')
        ORDER BY day`
     )
     .all() as { day: string; count: number }[];
@@ -57,8 +57,7 @@ export function getDashboardStats(db: Database.Database): DashboardStats {
         .prepare(
           `SELECT COALESCE(SUM(MAX(reports.balance - COALESCE(p.paid_total, 0), 0)), 0) as total
            FROM reports
-           LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id
-           WHERE reports.status = 'FINALIZED'`
+           LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id`
         )
         .get() as { total: number }
     ).total || 0;

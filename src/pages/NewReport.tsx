@@ -110,7 +110,7 @@ export default function NewReport() {
         setPatient(
           fullPatient
             ? patientToDraft(fullPatient)
-            : { id: report.patient_id, full_name: report.patient_name, age: String(report.age ?? ''), age_unit: report.age_unit, gender: report.gender, phone: '', address: '' }
+            : { id: report.patient_id, title: report.patient_title || '', full_name: report.patient_name, age: String(report.age ?? ''), age_unit: report.age_unit, gender: report.gender, phone: '', address: '' }
         );
         setDoctorId(report.doctor_id ? String(report.doctor_id) : '');
         setSelectedTests(
@@ -162,7 +162,15 @@ export default function NewReport() {
   }, [id, navigate]);
 
   const subtotal = selectedTests.reduce((sum, st) => sum + st.test.price, 0);
-  const canSave = patient.full_name.trim() !== '' && selectedTests.length > 0 && !isReadOnly;
+  // Saving only needs a patient: the first save registers (and locks) the
+  // patient before any test is added. Preview/Finalize also need a test.
+  // A patient that isn't registered yet also needs age and gender, since the
+  // first save locks them permanently.
+  const canSave =
+    patient.full_name.trim() !== '' &&
+    (patient.id != null || (patient.age.trim() !== '' && !!patient.gender)) &&
+    !isReadOnly;
+  const hasTests = selectedTests.length > 0;
 
   const markDirty = <T,>(setter: (v: T) => void) => (v: T) => {
     setter(v);
@@ -213,6 +221,7 @@ export default function NewReport() {
     return {
       patient: {
         id: patient.id,
+        title: patient.title,
         full_name: patient.full_name.trim(),
         age: patient.age.trim() === '' ? null : Number(patient.age),
         age_unit: patient.age_unit,
@@ -258,7 +267,7 @@ export default function NewReport() {
         const result = reportId ? await api.reports.updateDraft(reportId, payload) : await api.reports.create(payload);
         if (!reportId) {
           setReportId(result.id);
-          setPatient((p) => ({ ...p, id: result.patient_id }));
+          setPatient((p) => ({ ...p, id: result.patient_id, patient_code: result.patient_code }));
         }
         setStatus(result.status);
         setLastSavedAt(new Date());
@@ -275,14 +284,17 @@ export default function NewReport() {
     [canSave, buildPayload, reportId, setDirty]
   );
 
-  // Auto-save every 5 seconds while there's something worth saving.
+  // Auto-save every 5 seconds while there's something worth saving — but
+  // only once the report exists. The first save registers (and locks) the
+  // patient, so it must be a deliberate Save Draft click, never an
+  // auto-save that could catch a half-typed name.
   useEffect(() => {
-    if (isReadOnly) return;
+    if (isReadOnly || reportId == null) return;
     const interval = setInterval(() => {
       if (dirty && canSave && !saving) save(true);
     }, AUTO_SAVE_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [dirty, canSave, saving, save, isReadOnly]);
+  }, [dirty, canSave, saving, save, isReadOnly, reportId]);
 
   // Warn before closing the whole app/window with unsaved changes.
   useEffect(() => {
@@ -306,8 +318,17 @@ export default function NewReport() {
   );
 
   const handleSaveDraft = async () => {
+    const wasRegistered = reportId != null;
     const result = await save(false);
-    if (result) toast.success('Draft saved.');
+    if (result) toast.success(wasRegistered ? 'Draft saved.' : 'Patient registered and locked.');
+  };
+
+  // "Register Patient": the first save creates the patient and this report
+  // right away, so from this moment the patient is locked (no edits, no
+  // swapping, no delete) and shows up in the daily/weekly/monthly reports.
+  const handleRegisterPatient = async () => {
+    const result = await save(false);
+    if (result) toast.success('Patient registered and locked. Now add tests.');
   };
 
   const handlePreview = async () => {
@@ -403,7 +424,11 @@ export default function NewReport() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">{id ? 'Edit Report' : 'New Report'}</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {isReadOnly ? 'This report is finalized and locked.' : 'Saves as a draft automatically — nothing is locked until you finalize it.'}
+            {isReadOnly
+              ? 'This report is finalized and locked.'
+              : reportId == null
+                ? 'Enter the patient and click Register Patient. The patient is then saved and locked — it cannot be changed or deleted.'
+                : 'Patient is registered and locked. Tests, results and billing save automatically until you finalize.'}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -429,6 +454,9 @@ export default function NewReport() {
         performedBy={performedBy}
         onPerformedByChange={setPerformedByDirty}
         disabled={isReadOnly}
+        reportSaved={reportId != null}
+        onRegister={handleRegisterPatient}
+        registering={saving}
       />
 
       <div className="space-y-3">
@@ -496,7 +524,12 @@ export default function NewReport() {
         />
       </div>
 
-      <BillingPanel subtotal={subtotal} billing={billing} onChange={setBillingDirty} disabled={isReadOnly} />
+      <BillingPanel
+        tests={selectedTests.map((st) => ({ id: st.test.id, name: st.test.name, price: st.test.price }))}
+        billing={billing}
+        onChange={setBillingDirty}
+        disabled={isReadOnly}
+      />
 
       {!isReadOnly && (
         <div className="sticky bottom-0 -mx-8 bg-background border-t border-border px-8 py-4 flex items-center justify-end gap-3 no-print">
@@ -504,11 +537,15 @@ export default function NewReport() {
             <Save className="h-4 w-4" />
             Save Draft
           </Button>
-          <Button variant="outline" onClick={handlePreview} disabled={!canSave || saving}>
+          <Button variant="outline" onClick={handlePreview} disabled={!canSave || !hasTests || saving}>
             <Eye className="h-4 w-4" />
             Preview
           </Button>
-          <Button onClick={handleFinalizeClick} disabled={!canSave || saving || !canFinalize} title={!canFinalize ? 'Only an admin or technician can finalize' : undefined}>
+          <Button
+            onClick={handleFinalizeClick}
+            disabled={!canSave || !hasTests || saving || !canFinalize}
+            title={!canFinalize ? 'Only an admin or technician can finalize' : !hasTests ? 'Add at least one test first' : undefined}
+          >
             <PrinterCheck className="h-4 w-4" />
             Finalize & Print
           </Button>

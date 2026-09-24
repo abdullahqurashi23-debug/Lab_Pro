@@ -166,6 +166,9 @@ export interface NewPaymentInput {
 }
 
 export interface LabProApi {
+  events: {
+    onDataChanged: (callback: (channel: string) => void) => () => void;
+  };
   auth: {
     needsSetup: () => Promise<boolean>;
     login: (username: string, password: string) => Promise<LoginResult>;
@@ -210,7 +213,6 @@ export interface LabProApi {
     list: (search?: string) => Promise<PatientWithStats[]>;
     get: (id: number) => Promise<Patient | undefined>;
     create: (input: NewPatientInput) => Promise<Patient>;
-    update: (id: number, input: NewPatientInput) => Promise<Patient>;
     findDuplicate: (fullName: string, phone: string) => Promise<Patient | null>;
     trendableParameters: (patientId: number) => Promise<PatientTrendParameter[]>;
     parameterHistory: (patientId: number, parameterName: string) => Promise<PatientParameterPoint[]>;
@@ -243,7 +245,6 @@ export interface LabProApi {
     findMissingPdfs: () => Promise<{ id: number; report_no: string; pdf_path: string }[]>;
     regenerateMissingPdfs: () => Promise<{ id: number; reportNo: string; success: boolean; error?: string }[]>;
     verifyPdf: () => Promise<VerifyPdfResult>;
-    deleteDraft: (reportId: number) => Promise<{ deleted: boolean }>;
     getById: (reportId: number) => Promise<ReportWithDetails | null>;
     list: (filters?: ReportListFilters) => Promise<ReportListRow[]>;
     listPage: (filters?: ReportsPageFilters) => Promise<ReportsPageResult>;
@@ -297,6 +298,7 @@ export interface LabProApi {
     report: (reportId: number, mode: 'paper' | 'pdf') => Promise<PrintResult>;
     savePdf: (reportId: number) => Promise<FileOpResult>;
     testPage: () => Promise<PrintResult>;
+    listPrinters: () => Promise<{ name: string; displayName: string; isDefault: boolean }[]>;
     openPdf: (reportId: number) => Promise<{ success: boolean; missingPdf?: boolean }>;
     openFolder: (reportId: number) => Promise<{ success: boolean; missingPdf?: boolean }>;
   };

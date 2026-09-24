@@ -17,6 +17,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { TestCategory, TestWithParameters } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +72,10 @@ export default function TestCatalog() {
   useEffect(() => {
     Promise.all([refreshTests(), refreshCategories()]).finally(() => setLoading(false));
   }, []);
+  useLiveRefresh(() => {
+    refreshTests();
+    refreshCategories();
+  });
 
   const fuse = useMemo(
     () => new Fuse(tests, { keys: ['name', 'short_code'], threshold: 0.35, ignoreLocation: true }),

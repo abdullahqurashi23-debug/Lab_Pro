@@ -16,6 +16,7 @@ export interface PatientDraft {
   // Display-only (never sent back to the server) — lets the "editing an
   // existing patient" header show something more useful than a bare id.
   patient_code?: string;
+  title: string;
   full_name: string;
   age: string;
   age_unit: AgeUnit;
@@ -24,14 +25,20 @@ export interface PatientDraft {
   address: string;
 }
 
+const PATIENT_TITLES = ['Mr.', 'Mrs.', 'Miss', 'Ms.', 'Master', 'Baby', 'Dr.'];
+// Picking a title fills in the obvious gender (still changeable before
+// registering); Baby and Dr. say nothing about gender.
+const TITLE_GENDER: Record<string, Gender> = { 'Mr.': 'Male', Master: 'Male', 'Mrs.': 'Female', Miss: 'Female', 'Ms.': 'Female' };
+
 export function blankPatientDraft(): PatientDraft {
-  return { full_name: '', age: '', age_unit: 'Years', gender: null, phone: '', address: '' };
+  return { title: '', full_name: '', age: '', age_unit: 'Years', gender: null, phone: '', address: '' };
 }
 
 export function patientToDraft(p: Patient): PatientDraft {
   return {
     id: p.id,
     patient_code: p.patient_code,
+    title: p.title || '',
     full_name: p.full_name,
     age: p.age == null ? '' : String(p.age),
     age_unit: p.age_unit,
@@ -56,6 +63,12 @@ interface PatientPanelProps {
   performedBy: string;
   onPerformedByChange: (name: string) => void;
   disabled?: boolean;
+  // True once this report has been saved: its patient can no longer be
+  // swapped for another.
+  reportSaved?: boolean;
+  // Saves the patient + report immediately, locking the patient.
+  onRegister?: () => void;
+  registering?: boolean;
 }
 
 export default function PatientPanel({
@@ -66,7 +79,18 @@ export default function PatientPanel({
   performedBy,
   onPerformedByChange,
   disabled,
+  reportSaved,
+  onRegister,
+  registering,
 }: PatientPanelProps) {
+  // A patient that already exists in the database (picked from search, or
+  // registered by this report's first save) is locked: its details are
+  // read-only here and can't be changed anywhere (see migration 016).
+  const patientLocked = disabled || !!patient.id;
+  // Registering locks these forever, so they must be filled in first
+  // (age and gender also drive the reference ranges).
+  // An already-saved patient is used as stored, gaps and all.
+  const detailsComplete = !!patient.id || (patient.full_name.trim() !== '' && patient.age.trim() !== '' && !!patient.gender);
   // Only two real modes now: searching for/starting a patient, or editing
   // one (whether it's an existing patient pulled up from search/a draft, or
   // a brand-new one being typed in for the first time) — both show the
@@ -259,20 +283,45 @@ export default function PatientPanel({
           <>
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {patient.id ? `Editing ${patient.patient_code || 'existing patient'}` : 'New Patient'}
+                {patient.id ? `Patient ${patient.patient_code || ''} — locked` : 'New Patient'}
               </span>
-              <Button variant="ghost" size="sm" onClick={changePatient} disabled={disabled}>
-                <X className="h-4 w-4" />
-                Change Patient
-              </Button>
+              {!reportSaved && (
+                <Button variant="ghost" size="sm" onClick={changePatient} disabled={disabled}>
+                  <X className="h-4 w-4" />
+                  Change Patient
+                </Button>
+              )}
             </div>
-            <div className="grid grid-cols-4 gap-4">
-              <div className="col-span-2 space-y-1.5">
+            <div className="grid grid-cols-6 gap-4">
+              <div className="space-y-1.5">
+                <Label>Title</Label>
+                <Select
+                  value={patient.title || '__none__'}
+                  onValueChange={(v) => {
+                    const title = v === '__none__' ? '' : v;
+                    onPatientChange({ ...patient, title, gender: TITLE_GENDER[title] ?? patient.gender });
+                  }}
+                  disabled={patientLocked}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {PATIENT_TITLES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-3 space-y-1.5">
                 <Label>Patient Name</Label>
                 <Input
                   value={patient.full_name}
                   onChange={(e) => onPatientChange({ ...patient, full_name: e.target.value })}
-                  disabled={disabled}
+                  disabled={patientLocked}
                 />
               </div>
               <div className="space-y-1.5">
@@ -282,12 +331,12 @@ export default function PatientPanel({
                   min={0}
                   value={patient.age}
                   onChange={(e) => onPatientChange({ ...patient, age: e.target.value })}
-                  disabled={disabled}
+                  disabled={patientLocked}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>Age Unit</Label>
-                <Select value={patient.age_unit} onValueChange={(v) => onPatientChange({ ...patient, age_unit: v as AgeUnit })} disabled={disabled}>
+                <Select value={patient.age_unit} onValueChange={(v) => onPatientChange({ ...patient, age_unit: v as AgeUnit })} disabled={patientLocked}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -298,9 +347,9 @@ export default function PatientPanel({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Gender</Label>
-                <Select value={patient.gender || ''} onValueChange={(v) => onPatientChange({ ...patient, gender: v as Gender })} disabled={disabled}>
+                <Select value={patient.gender || ''} onValueChange={(v) => onPatientChange({ ...patient, gender: v as Gender })} disabled={patientLocked}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
@@ -311,15 +360,31 @@ export default function PatientPanel({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Phone</Label>
-                <Input value={patient.phone} onChange={(e) => onPatientChange({ ...patient, phone: e.target.value })} disabled={disabled} />
+                <Input value={patient.phone} onChange={(e) => onPatientChange({ ...patient, phone: e.target.value })} disabled={patientLocked} />
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Address</Label>
-                <Input value={patient.address} onChange={(e) => onPatientChange({ ...patient, address: e.target.value })} disabled={disabled} />
+                <Input value={patient.address} onChange={(e) => onPatientChange({ ...patient, address: e.target.value })} disabled={patientLocked} />
               </div>
             </div>
+            {!reportSaved && onRegister && (
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/40 px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  {patient.id
+                    ? 'Start a report for this patient. It is saved immediately and cannot be deleted.'
+                    : 'Check the details, then register. Once registered, the patient is saved and locked — it cannot be changed or deleted.'}
+                </p>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <Button onClick={onRegister} disabled={disabled || registering || !detailsComplete}>
+                    <UserPlus className="h-4 w-4" />
+                    {patient.id ? 'Start Report' : 'Register Patient'}
+                  </Button>
+                  {!detailsComplete && <span className="text-xs text-destructive">Name, age and gender are required</span>}
+                </div>
+              </div>
+            )}
           </>
         )}
 

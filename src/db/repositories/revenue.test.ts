@@ -43,15 +43,15 @@ describe('revenue totals — daily / weekly / monthly', () => {
     );
   }
 
-  it('daily: counts only today, excludes yesterday and drafts', () => {
+  it('daily: counts only today (drafts included), excludes yesterday', () => {
     finalizedReportOnDay(0, 500);
     finalizedReportOnDay(0, 300);
     finalizedReportOnDay(1, 1000); // yesterday — must not count as "today"
-    draftReport(9999); // draft — must never count as revenue
+    draftReport(9999); // saved today as a draft — still counts
 
     const daily = getRevenuePeriodReport(ctx.db, { granularity: 'daily' });
-    expect(daily.current.count).toBe(2);
-    expect(daily.current.revenue).toBe(800);
+    expect(daily.current.count).toBe(3);
+    expect(daily.current.revenue).toBe(10799);
     expect(daily.previous.count).toBe(1);
     expect(daily.previous.revenue).toBe(1000);
   });
@@ -91,12 +91,12 @@ describe('revenue totals — daily / weekly / monthly', () => {
     expect(custom.current.revenue).toBe(1000);
   });
 
-  it('never counts a draft report toward revenue at any granularity', () => {
+  it('counts a draft report toward revenue at every granularity', () => {
     draftReport(123456);
     for (const granularity of ['daily', 'weekly', 'monthly', 'yearly'] as const) {
       const report = getRevenuePeriodReport(ctx.db, { granularity });
-      expect(report.current.revenue).toBe(0);
-      expect(report.current.count).toBe(0);
+      expect(report.current.revenue).toBe(123456);
+      expect(report.current.count).toBe(1);
     }
   });
 

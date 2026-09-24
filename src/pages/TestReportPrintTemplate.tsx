@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
-import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
+import { waitForFontsAndPaint, markPrintReady, markPrintError, PRINT_FONT } from '@/lib/printReady';
 import { localDate } from '@/lib/localTime';
 import type { ClinicSettings, RevenueGranularity, TestReportResult } from '@/lib/types';
 
@@ -71,8 +71,8 @@ export default function TestReportPrintTemplate() {
 
   // "Sale Report" layout: one line per test, solid black only (mono laser).
   return (
-    <div className="bg-white text-black font-sans text-[9.5pt] p-2">
-      <div className="text-center mb-5">
+    <div className="bg-white text-black text-[9pt] p-2" style={{ fontFamily: PRINT_FONT }}>
+      <div className="text-center mb-3">
         <div className="text-[1.5em] font-bold">{clinic.clinic_name}</div>
         {clinic.address && <div className="text-[1.15em] font-semibold whitespace-pre-line">{clinic.address}</div>}
       </div>
@@ -84,16 +84,16 @@ export default function TestReportPrintTemplate() {
       <table className="w-full border-collapse table-fixed">
         <SaleColumns />
         <thead>
-          <tr className="text-left" style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+          <tr className="text-left whitespace-nowrap" style={{ borderTop: '1px solid #000', background: '#e5e5e5' }}>
             <th className="py-1 pl-1 font-bold">No.</th>
             <th className="py-1 font-bold">Date</th>
             <th className="py-1 font-bold">LR No</th>
             <th className="py-1 pr-2 font-bold">Patient Name</th>
             <th className="py-1 pr-2 font-bold">Test Name</th>
-            <th className="py-1 pr-2 font-bold text-right">Fees</th>
-            <th className="py-1 pr-2 font-bold text-right">Discount</th>
-            <th className="py-1 pr-2 font-bold text-right">Advance</th>
-            <th className="py-1 font-bold text-right">Remaining</th>
+            <th className="py-1 pl-3 pr-1 text-right font-bold">Fees</th>
+            <th className="py-1 pl-3 pr-1 text-right font-bold">Discount</th>
+            <th className="py-1 pl-3 pr-1 text-right font-bold">Advance</th>
+            <th className="py-1 pl-3 pr-1 text-right font-bold">Remaining</th>
           </tr>
         </thead>
         <tbody>
@@ -101,19 +101,19 @@ export default function TestReportPrintTemplate() {
             <tr key={i} className="align-top">
               <td className="py-[3px] pl-1">{i + 1}</td>
               <td className="py-[3px] whitespace-nowrap">{localDate(l.created_at)}</td>
-              <td className="py-[3px] pr-1 break-all">{l.report_no}</td>
+              <td className="py-[3px] pr-2 whitespace-nowrap">{l.report_no}</td>
               <td className="py-[3px] pr-2 uppercase">{l.patient_name}</td>
               <td className="py-[3px] pr-2 uppercase">{l.test_name}</td>
-              <td className="py-[3px] pr-2 text-right">{num(l.fee)}</td>
-              <td className="py-[3px] pr-2 text-right">{num(l.discount)}</td>
-              <td className="py-[3px] pr-2 text-right">{num(l.advance)}</td>
-              <td className="py-[3px] text-right">{num(l.remaining)}</td>
+              <td className="py-[3px] pl-3 pr-1 text-right">{num(l.fee)}</td>
+              <td className="py-[3px] pl-3 pr-1 text-right">{num(l.discount)}</td>
+              <td className="py-[3px] pl-3 pr-1 text-right">{num(l.advance)}</td>
+              <td className="py-[3px] pl-3 pr-1 text-right">{num(l.remaining)}</td>
             </tr>
           ))}
           {report.lines.length === 0 && (
             <tr>
               <td colSpan={9} className="py-4 text-center">
-                No finalized reports in this period.
+                No reports in this period.
               </td>
             </tr>
           )}
@@ -130,10 +130,10 @@ export default function TestReportPrintTemplate() {
           <tbody>
             <tr className="font-bold">
               <td colSpan={5} />
-              <td className="py-1 pr-2 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.fee)}</td>
-              <td className="py-1 pr-2 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.discount)}</td>
-              <td className="py-1 pr-2 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.advance)}</td>
-              <td className="py-1 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.remaining)}</td>
+              <td className="py-1 pl-3 pr-1 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.fee)}</td>
+              <td className="py-1 pl-3 pr-1 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.discount)}</td>
+              <td className="py-1 pl-3 pr-1 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.advance)}</td>
+              <td className="py-1 pl-3 pr-1 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.remaining)}</td>
             </tr>
           </tbody>
         </table>
@@ -146,15 +146,15 @@ export default function TestReportPrintTemplate() {
 function SaleColumns() {
   return (
     <colgroup>
-      <col style={{ width: '5%' }} />
-      <col style={{ width: '12%' }} />
+      <col style={{ width: '4%' }} />
+      <col style={{ width: '9.5%' }} />
+      <col style={{ width: '14%' }} />
       <col style={{ width: '15%' }} />
-      <col style={{ width: '15%' }} />
-      <col style={{ width: '21%' }} />
+      <col style={{ width: '21.5%' }} />
       <col style={{ width: '8%' }} />
-      <col style={{ width: '8%' }} />
-      <col style={{ width: '8%' }} />
-      <col style={{ width: '8%' }} />
+      <col style={{ width: '9%' }} />
+      <col style={{ width: '9%' }} />
+      <col style={{ width: '10%' }} />
     </colgroup>
   );
 }

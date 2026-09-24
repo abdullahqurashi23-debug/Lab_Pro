@@ -38,6 +38,7 @@ import {
   printAlignmentTestPage,
   printRevenue,
   printTestReport,
+  listPrinters,
 } from '../print';
 import { buildArchivePath } from '../reportArchive';
 import type { PublicUser, Role, ReportWithDetails } from '../../src/db/repositories';
@@ -277,7 +278,22 @@ function audit(action: string, entity: string, entityId: number | null, details?
 // Wraps an IPC handler so a zod validation failure or a thrown domain error
 // (e.g. "can't delete a test in use", "not signed in") comes back to the
 // renderer as a clean Error message instead of an opaque IPC rejection.
+// Channels that change stored data. After one succeeds, every window is
+// told "data:changed" so open pages (Dashboard, Reports History, Test
+// Report, Revenue, Patients…) re-load straight away instead of showing
+// stale numbers until the user navigates away and back.
+// print:report is included because printing a draft finalizes it.
+const MUTATING_CHANNEL =
+  /:(create|update\w*|delete|activate|deactivate|reorder|finalize|retryArchive|regenerate\w*|record|set|import\w*|resetPassword)$|^print:report$/;
+
+function broadcastDataChanged(channel: string) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('data:changed', channel);
+  }
+}
+
 function handle<T>(channel: string, fn: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => T) {
+  const mutates = MUTATING_CHANNEL.test(channel);
   ipcMain.handle(channel, async (event, ...args) => {
     try {
       // Awaited here (not just returned) so this try/catch actually
@@ -289,7 +305,9 @@ function handle<T>(channel: string, fn: (event: Electron.IpcMainInvokeEvent, ...
       // `await`, every zod/domain error inside them bypassed the clean
       // message extraction below entirely and reached the renderer as a
       // raw, often unreadable "Error invoking remote method" message.
-      return await fn(event, ...args);
+      const result = await fn(event, ...args);
+      if (mutates) broadcastDataChanged(channel);
+      return result;
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new Error(err.errors.map((e) => e.message).join('; '));
@@ -612,13 +630,6 @@ handle('patients:create', (_e, payload) => {
   audit('CREATE', 'patient', created.id, { full_name: created.full_name });
   return created;
 });
-handle('patients:update', (_e, id, payload) => {
-  requireRole('ADMIN', 'RECEPTION');
-  const input = patientInputSchema.parse(payload);
-  const updated = patientsRepo.updatePatient(db(), idSchema.parse(id), input);
-  audit('UPDATE', 'patient', updated.id);
-  return updated;
-});
 handle('patients:findDuplicate', (_e, fullName, phone) => {
   requireAuth();
   return patientsRepo.findDuplicatePatient(db(), String(fullName ?? ''), String(phone ?? '')) ?? null;
@@ -849,12 +860,6 @@ handle('reports:verifyPdf', async () => {
   audit('VERIFY_PDF', 'report', null, { filePath, hash, matched: !!match });
   return { success: true, matched: !!match, hash, filePath, report: match ?? null };
 });
-handle('reports:deleteDraft', (_e, reportId) => {
-  requireRole('ADMIN', 'RECEPTION');
-  const result = reportsRepo.deleteDraftReport(db(), idSchema.parse(reportId));
-  audit('DELETE', 'report', idSchema.parse(reportId));
-  return result;
-});
 handle('reports:getById', (_e, reportId) => {
   requireAuth();
   return reportsRepo.getReportById(db(), idSchema.parse(reportId));
@@ -906,6 +911,18 @@ handle('revenue:exportExcel', async (_e, filters) => {
   audit('EXPORT_EXCEL', 'revenue', null, { path: result.filePath, ...parsed });
   return { success: true, path: result.filePath };
 });
+// The printer chosen in Settings → Printer; '' means the Windows default.
+const PRINTER_SETTING_KEY = 'printer_name';
+function selectedPrinter(): string {
+  return settingsRepo.getSetting(db(), PRINTER_SETTING_KEY) || '';
+}
+
+handle('print:listPrinters', async () => {
+  requireAuth();
+  if (!mainWindow) return [];
+  return listPrinters(mainWindow);
+});
+
 // Printing must never be a complete dead end. If the direct print genuinely
 // fails or times out (disconnected printer, stuck driver, a spooler that
 // never calls back), this hands the user a real PDF file — opened
@@ -944,7 +961,7 @@ handle('revenue:print', async (_e, filters) => {
   const parsed = revenuePeriodFiltersSchema.parse(filters);
   const layout = printSettingsRepo.getPrintLayout(db());
   const result = await printWithFallback(
-    () => printRevenue(parsed, layout),
+    () => printRevenue(parsed, layout, selectedPrinter()),
     () => generateRevenuePdf(parsed, layout),
     `revenue-${parsed.granularity}-${Date.now()}.pdf`
   );
@@ -978,7 +995,7 @@ handle('testreport:print', async (_e, filters) => {
   const parsed = revenuePeriodFiltersSchema.parse(filters);
   const layout = printSettingsRepo.getPrintLayout(db());
   const result = await printWithFallback(
-    () => printTestReport(parsed, layout),
+    () => printTestReport(parsed, layout, selectedPrinter()),
     () => generateTestReportPdf(parsed, layout),
     `test-report-${parsed.granularity}-${Date.now()}.pdf`
   );
@@ -1175,7 +1192,7 @@ handle('print:report', async (_e, reportId, mode) => {
   const clinic = clinicSettingsRepo.getClinicSettings(db());
   const archivedPdf = report.pdf_path;
   const result = await printWithFallback(
-    () => printReport(id, printMode, layout),
+    () => printReport(id, printMode, layout, selectedPrinter()),
     async () =>
       printMode === 'pdf' && archivedPdf && fs.existsSync(archivedPdf)
         ? fs.readFileSync(archivedPdf)
@@ -1249,7 +1266,7 @@ handle('print:testPage', async () => {
   requireAdmin();
   const layout = printSettingsRepo.getPrintLayout(db());
   const result = await printWithFallback(
-    () => printAlignmentTestPage(layout),
+    () => printAlignmentTestPage(layout, selectedPrinter()),
     () => generateAlignmentTestPage(layout),
     `alignment-test-${Date.now()}.pdf`
   );

@@ -1,3 +1,4 @@
+import { localDate } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
@@ -23,7 +24,7 @@ function pctLabel(pct: number | null): string {
 
 function BreakdownTable({ rows, labelHeader }: { rows: { label: string; revenue: number; count: number }[] | undefined; labelHeader: string }) {
   const safeRows = rows || [];
-  if (safeRows.length === 0) return <p className="text-neutral-500 text-[0.85em]">No finalized reports in this period.</p>;
+  if (safeRows.length === 0) return <p className="text-neutral-500 text-[0.85em]">No reports in this period.</p>;
   return (
     <table className="w-full text-[0.85em] border-collapse mb-4">
       <thead>
@@ -114,7 +115,7 @@ export default function RevenuePrintTemplate() {
             </td>
           </tr>
           <tr>
-            <td className="py-1 pr-4 text-neutral-500">Finalized Reports</td>
+            <td className="py-1 pr-4 text-neutral-500">Reports</td>
             <td className="py-1 pr-4 font-semibold">{report.current.count}</td>
             <td className="py-1 text-neutral-500">
               {pctLabel(report.changePct.count)} vs previous period ({report.previous.count})
@@ -183,7 +184,7 @@ export default function RevenuePrintTemplate() {
               <tr key={o.id} className="border-b border-black/10">
                 <td className="py-1 pr-2">{o.report_no}</td>
                 <td className="py-1 pr-2">{o.patient_name}</td>
-                <td className="py-1 pr-2">{o.finalized_at ? o.finalized_at.slice(0, 10) : '—'}</td>
+                <td className="py-1 pr-2">{o.finalized_at ? localDate(o.finalized_at) : '—'}</td>
                 <td className="py-1 pr-2 text-right">{fmt(o.total)}</td>
                 <td className="py-1 pr-2 text-right">{fmt(o.paid_total)}</td>
                 <td className="py-1 text-right font-semibold">{fmt(o.balance)}</td>

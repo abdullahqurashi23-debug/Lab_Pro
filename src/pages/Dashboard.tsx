@@ -1,9 +1,11 @@
+import { localDate } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Plus } from 'lucide-react';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { DashboardStats, ReportListRow } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,7 +33,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = (silent: boolean) =>
     api.dashboard
       .stats()
       .then(setStats)
@@ -39,10 +41,15 @@ export default function Dashboard() {
         // A rejected/incompatible response here (e.g. the app was updated
         // but the running process is stale) should never leave the whole
         // page stuck or crash it — just surface it and let the user retry.
-        showErrorDialog(err instanceof Error ? err.message : 'Failed to load dashboard stats.');
+        // Background refreshes stay quiet and keep the last good numbers.
+        if (!silent) showErrorDialog(err instanceof Error ? err.message : 'Failed to load dashboard stats.');
       })
       .finally(() => setLoading(false));
+
+  useEffect(() => {
+    load(false);
   }, []);
+  useLiveRefresh(() => load(true));
 
   if (loading || !stats) {
     return <div className="p-8 text-muted-foreground">Loading dashboard…</div>;
@@ -65,7 +72,7 @@ export default function Dashboard() {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Finalized reports and revenue at a glance.</p>
+          <p className="text-muted-foreground text-sm mt-1">Reports and revenue at a glance.</p>
         </div>
         <Button onClick={() => navigate('/new-report')}>
           <Plus className="h-4 w-4" />
@@ -134,7 +141,7 @@ export default function Dashboard() {
                   <TableCell className="font-medium">{r.report_no}</TableCell>
                   <TableCell>{r.patient_name}</TableCell>
                   <TableCell className="text-muted-foreground">{r.doctor_name || '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{r.created_at.slice(0, 10)}</TableCell>
+                  <TableCell className="text-muted-foreground">{localDate(r.created_at)}</TableCell>
                   <TableCell>{fmt(r.total)}</TableCell>
                   <TableCell>
                     <StatusBadge status={r.status} />

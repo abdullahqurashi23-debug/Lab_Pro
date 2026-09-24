@@ -1,7 +1,9 @@
+import { localDateTime } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { AuditLogEntry, PublicUser } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,6 +47,8 @@ export default function AuditLog() {
   const [rows, setRows] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((t) => t + 1));
 
   useEffect(() => {
     api.audit.actions().then(setActions).catch(() => setActions([]));
@@ -78,7 +82,7 @@ export default function AuditLog() {
         showErrorDialog(err instanceof Error ? err.message : 'Failed to load audit log.');
       })
       .finally(() => setLoading(false));
-  }, [from, to, action, entity, userId, page]);
+  }, [from, to, action, entity, userId, page, tick]);
 
   const clearFilters = () => {
     setFrom('');
@@ -178,7 +182,7 @@ export default function AuditLog() {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="text-muted-foreground whitespace-nowrap">{r.created_at.slice(0, 19).replace('T', ' ')}</TableCell>
+                <TableCell className="text-muted-foreground whitespace-nowrap">{localDateTime(r.created_at)}</TableCell>
                 <TableCell>{r.user_full_name || <span className="text-muted-foreground">System</span>}</TableCell>
                 <TableCell className="font-medium">{humanize(r.action)}</TableCell>
                 <TableCell className="text-muted-foreground">

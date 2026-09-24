@@ -21,6 +21,7 @@ export function searchPatients(db: Database.Database, query: string): Patient[] 
 }
 
 export interface NewPatientInput {
+  title?: string;
   full_name: string;
   age: number | null;
   age_unit: 'Years' | 'Months' | 'Days';
@@ -32,9 +33,10 @@ export interface NewPatientInput {
 export function createPatient(db: Database.Database, input: NewPatientInput): Patient {
   const info = db
     .prepare(
-      'INSERT INTO patients (full_name, age, age_unit, gender, phone, address) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO patients (title, full_name, age, age_unit, gender, phone, address) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
     .run(
+      input.title || '',
       input.full_name,
       input.age,
       input.age_unit || 'Years',
@@ -43,26 +45,6 @@ export function createPatient(db: Database.Database, input: NewPatientInput): Pa
       input.address || ''
     );
   return getPatientById(db, info.lastInsertRowid as number) as Patient;
-}
-
-export function updatePatient(db: Database.Database, id: number, input: NewPatientInput): Patient {
-  // `??` (not `||`) deliberately, so a caller that simply doesn't include
-  // phone/address in its payload leaves the existing value alone instead
-  // of silently blanking it — confirmed this actually happened: a report
-  // created for an existing patient without re-sending phone/address wiped
-  // that patient's phone number. An explicit '' still clears the field on
-  // purpose; only an actually-omitted (undefined) field is preserved.
-  const current = getPatientById(db, id);
-  db.prepare('UPDATE patients SET full_name = ?, age = ?, age_unit = ?, gender = ?, phone = ?, address = ? WHERE id = ?').run(
-    input.full_name,
-    input.age,
-    input.age_unit || 'Years',
-    input.gender,
-    input.phone ?? current?.phone ?? '',
-    input.address ?? current?.address ?? '',
-    id
-  );
-  return getPatientById(db, id) as Patient;
 }
 
 export interface PatientWithStats extends Patient {

@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { splitBilling } from '@/db/billingSplit';
 
 export type DiscountMode = 'amount' | 'percent';
 
@@ -23,19 +24,27 @@ export function computeDiscountAmount(subtotal: number, billing: BillingDraft): 
 }
 
 interface BillingPanelProps {
-  subtotal: number;
+  // Every selected test with its Test Catalog price, in report order.
+  tests: { id: number; name: string; price: number }[];
   billing: BillingDraft;
   onChange: (b: BillingDraft) => void;
   disabled?: boolean;
 }
 
-export default function BillingPanel({ subtotal, billing, onChange, disabled }: BillingPanelProps) {
+export default function BillingPanel({ tests, billing, onChange, disabled }: BillingPanelProps) {
+  const subtotal = tests.reduce((sum, t) => sum + t.price, 0);
   const discount = computeDiscountAmount(subtotal, billing);
   const total = Math.max(0, subtotal - discount);
   const paid = Number(billing.paid) || 0;
   // Matches the backend exactly (see reports.ts) — clamped at 0 on
   // overpayment rather than showing a confusing negative balance.
   const balance = Math.max(0, total - paid);
+  // Same per-test split the printed Sale Report uses, so what reception
+  // sees here is exactly what prints.
+  const shares = splitBilling(
+    tests.map((t) => t.price),
+    { discount, paid, balance }
+  );
   const fmt = (n: number) => `Af ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
   return (
@@ -94,6 +103,34 @@ export default function BillingPanel({ subtotal, billing, onChange, disabled }: 
             </Select>
           </div>
         </div>
+
+        {tests.length > 0 && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="py-1.5 font-medium">Test</th>
+                <th className="py-1.5 font-medium text-right">Price</th>
+                <th className="py-1.5 font-medium text-right">Discount</th>
+                <th className="py-1.5 font-medium text-right">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tests.map((t, i) => (
+                <tr key={t.id} className="border-t border-border">
+                  <td className="py-1.5">
+                    {t.name}
+                    {t.price === 0 && (
+                      <span className="ml-2 text-xs text-destructive">No price set — add it in Test Catalog</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 text-right">{fmt(shares[i].fee)}</td>
+                  <td className="py-1.5 text-right">{shares[i].discount ? `-${fmt(shares[i].discount)}` : '—'}</td>
+                  <td className="py-1.5 text-right font-medium">{fmt(shares[i].net)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         <div className="grid grid-cols-4 gap-4 pt-3 border-t border-border text-sm">
           <div>

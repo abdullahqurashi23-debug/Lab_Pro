@@ -233,30 +233,36 @@ export async function generateTestReportPdf(
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
-  const raw = await renderToPdfBuffer(`/print-template/test-report?${params.toString()}`, layout);
-  return addPageNumbers(raw, layout);
+  const compact = saleReportLayout(layout);
+  const raw = await renderToPdfBuffer(`/print-template/test-report?${params.toString()}`, compact);
+  return addPageNumbers(raw, compact);
 }
 
+// The Sale Report is printed on plain paper, not the lab's letterhead, so it
+// uses small fixed margins and starts at the top of the page instead of
+// below the letterhead's header band. Paper size still follows Settings.
+function saleReportLayout(layout: PrintLayout): PrintLayout {
+  return { ...layout, topMarginMm: 10, bottomMarginMm: 12, leftMarginMm: 10, rightMarginMm: 10 };
+}
+
+
 // Direct printing sends the rendered print-template page itself to the
-// OS default printer, with the same paper size and margins as the PDF.
+// chosen printer (Settings → Printer), or the Windows default printer when
+// none is chosen, with the same paper size and margins as the PDF. Nothing
+// here is specific to one printer brand: resolution and quality are left
+// to each printer's own driver.
 //
 // It deliberately does NOT go through a PDF: the old approach loaded the
 // generated PDF into a hidden window and called webContents.print() on it,
 // but Chromium shows PDFs through its viewer plugin in a separate frame,
 // and printing that from a hidden window is unreliable in Electron (blank
-// pages, a print dialog that never appears or never calls back), which is
-// what left the Print button stuck on "Printing…".
+// pages, a print dialog that never appears or never calls back).
 //
 // Trade-off: the pdf-lib "Page X of Y" stamp only exists in generated PDFs,
 // so it isn't on direct paper prints.
-async function printTemplate(hashPath: string, layout: PrintLayout): Promise<void> {
+async function printTemplate(hashPath: string, layout: PrintLayout, printer: string): Promise<void> {
   const win = await openTemplateWindow(hashPath);
   try {
-    // No deviceName: a silent print with no device goes to the OS default
-    // printer. Looking the printer up first via getPrintersAsync() is avoided
-    // on purpose — on Windows it can never resolve (seen with Fax/OneNote
-    // virtual printers installed), which froze the Print button forever.
-    //
     // webContents.print() returns void, not a Promise; the callback is the
     // only completion signal. It is not guaranteed to fire with every
     // driver, hence the timeout.
@@ -265,7 +271,12 @@ async function printTemplate(hashPath: string, layout: PrintLayout): Promise<voi
         win.webContents.print(
           {
             silent: true,
+            // Empty = the Windows default printer.
+            ...(printer ? { deviceName: printer } : {}),
             printBackground: true,
+            // Reports are black-and-white documents; this also keeps colour
+            // printers from mixing CMY inks into "black" text.
+            color: false,
             pageSize: layout.paperSize,
             margins: {
               marginType: 'custom',
@@ -277,7 +288,15 @@ async function printTemplate(hashPath: string, layout: PrintLayout): Promise<voi
           },
           (success, failureReason) => {
             if (success) resolve();
-            else reject(new Error(failureReason || 'Printing failed — check that the default printer is connected and online.'));
+            else
+              reject(
+                new Error(
+                  failureReason ||
+                    (printer
+                      ? `Printing to "${printer}" failed — check it is switched on and connected, or pick another printer in Settings.`
+                      : 'Printing failed — check that the default printer is connected and online.')
+                )
+              );
           }
         );
       }),
@@ -289,24 +308,40 @@ async function printTemplate(hashPath: string, layout: PrintLayout): Promise<voi
   }
 }
 
-export function printReport(reportId: number, mode: 'paper' | 'pdf', layout: PrintLayout): Promise<void> {
-  return printTemplate(`/print-template/${reportId}?mode=${mode}`, layout);
+// Installed printers for the Settings → Printer picker. Bounded by a
+// timeout: a stuck driver or offline network printer must never freeze the
+// Settings page.
+export async function listPrinters(win: BrowserWindow): Promise<{ name: string; displayName: string; isDefault: boolean }[]> {
+  const printers = await withTimeout(win.webContents.getPrintersAsync(), 10000, 'Loading the printer list timed out.');
+  return printers.map((p) => ({ name: p.name, displayName: p.displayName || p.name, isDefault: !!p.isDefault }));
 }
 
-export function printAlignmentTestPage(layout: PrintLayout): Promise<void> {
-  return printTemplate('/print-template/alignment-test', layout);
+export function printReport(reportId: number, mode: 'paper' | 'pdf', layout: PrintLayout, printer: string): Promise<void> {
+  return printTemplate(`/print-template/${reportId}?mode=${mode}`, layout, printer);
 }
 
-export function printRevenue(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<void> {
+export function printAlignmentTestPage(layout: PrintLayout, printer: string): Promise<void> {
+  return printTemplate('/print-template/alignment-test', layout, printer);
+}
+
+export function printRevenue(
+  filters: { granularity: string; from?: string; to?: string },
+  layout: PrintLayout,
+  printer: string
+): Promise<void> {
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
-  return printTemplate(`/print-template/revenue?${params.toString()}`, layout);
+  return printTemplate(`/print-template/revenue?${params.toString()}`, layout, printer);
 }
 
-export function printTestReport(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<void> {
+export function printTestReport(
+  filters: { granularity: string; from?: string; to?: string },
+  layout: PrintLayout,
+  printer: string
+): Promise<void> {
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
-  return printTemplate(`/print-template/test-report?${params.toString()}`, layout);
+  return printTemplate(`/print-template/test-report?${params.toString()}`, saleReportLayout(layout), printer);
 }

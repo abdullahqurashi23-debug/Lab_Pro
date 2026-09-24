@@ -1,6 +1,6 @@
 {
   "name": "labcore",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "LabCore — offline laboratory report management system",
   "author": "LabCore",
   "main": "dist-electron/electron/main/index.js",
@@ -38,6 +38,7 @@
     "jsbarcode": "^3.12.3",
     "lucide-react": "^0.451.0",
     "pdf-lib": "^1.17.1",
+    "qrcode-generator": "^1.4.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
@@ -84,7 +85,15 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {

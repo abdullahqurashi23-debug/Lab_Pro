@@ -1,8 +1,10 @@
+import { localDate } from '@/lib/localTime';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { showErrorDialog } from '@/lib/errorDialog';
 import { api } from '@/lib/api';
+import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { PatientWithStats } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -13,6 +15,9 @@ export default function Patients() {
   const [query, setQuery] = useState('');
   const [patients, setPatients] = useState<PatientWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  // Bumped by useLiveRefresh so a patient registered elsewhere appears here.
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((t) => t + 1));
 
   useEffect(() => {
     setLoading(true);
@@ -24,7 +29,7 @@ export default function Patients() {
         .finally(() => setLoading(false));
     }, 150);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, tick]);
 
   return (
     <div className="p-8 space-y-6">
@@ -65,7 +70,7 @@ export default function Patients() {
                 <TableCell>{p.gender}</TableCell>
                 <TableCell>{p.report_count}</TableCell>
                 <TableCell className="text-muted-foreground">
-                  {p.last_visit ? p.last_visit.slice(0, 10) : '—'}
+                  {p.last_visit ? localDate(p.last_visit) : '—'}
                 </TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <Button

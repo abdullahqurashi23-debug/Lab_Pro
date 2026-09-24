@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '../testUtils';
-import { createPatient, updatePatient, findDuplicatePatient, getPatientById } from './patients';
+import { createPatient, findDuplicatePatient, getPatientById } from './patients';
 import { createReport } from './reports';
 
 describe('patients', () => {
@@ -36,45 +36,44 @@ describe('patients', () => {
     });
   });
 
-  describe('updatePatient', () => {
-    it('updates the fields provided', () => {
-      const p = createPatient(ctx.db, { full_name: 'Old Name', age: 20, age_unit: 'Years', gender: 'Male', phone: '111' });
-      const updated = updatePatient(ctx.db, p.id, { full_name: 'New Name', age: 21, age_unit: 'Years', gender: 'Male', phone: '111' });
-      expect(updated.full_name).toBe('New Name');
-      expect(updated.age).toBe(21);
+  describe('saved patient details are locked', () => {
+    it('BLOCKS changing name, age, gender or contact details with direct SQL', () => {
+      const p = createPatient(ctx.db, { full_name: 'Locked Name', age: 20, age_unit: 'Years', gender: 'Male', phone: '111' });
+      expect(() => ctx.db.prepare("UPDATE patients SET full_name = 'Changed' WHERE id = ?").run(p.id)).toThrow(/locked/i);
+      expect(() => ctx.db.prepare('UPDATE patients SET age = 99 WHERE id = ?').run(p.id)).toThrow(/locked/i);
+      expect(() => ctx.db.prepare("UPDATE patients SET gender = 'Female' WHERE id = ?").run(p.id)).toThrow(/locked/i);
+      expect(() => ctx.db.prepare("UPDATE patients SET phone = '222' WHERE id = ?").run(p.id)).toThrow(/locked/i);
+      expect(getPatientById(ctx.db, p.id)?.full_name).toBe('Locked Name');
     });
 
-    it('preserves phone/address when the caller omits them, rather than blanking them out', () => {
-      const p = createPatient(ctx.db, { full_name: 'Has Phone', age: 20, age_unit: 'Years', gender: 'Male', phone: '0700123456', address: '123 Main St' });
-      // Deliberately not passing phone/address at all.
-      const updated = updatePatient(ctx.db, p.id, { full_name: 'Has Phone Updated', age: 20, age_unit: 'Years', gender: 'Male' });
-      expect(updated.phone).toBe('0700123456');
-      expect(updated.address).toBe('123 Main St');
+    it('saves the chosen title and locks it with the other details', () => {
+      const p = createPatient(ctx.db, { title: 'Mrs.', full_name: 'Titled', age: 40, age_unit: 'Years', gender: 'Female' });
+      expect(p.title).toBe('Mrs.');
+      expect(() => ctx.db.prepare("UPDATE patients SET title = 'Miss' WHERE id = ?").run(p.id)).toThrow(/locked/i);
     });
 
-    it('still allows explicitly clearing phone/address with an empty string', () => {
-      const p = createPatient(ctx.db, { full_name: 'Clear Me', age: 20, age_unit: 'Years', gender: 'Male', phone: '0700123456' });
-      const updated = updatePatient(ctx.db, p.id, { full_name: 'Clear Me', age: 20, age_unit: 'Years', gender: 'Male', phone: '' });
-      expect(updated.phone).toBe('');
+    it('still assigns a patient code to every new patient', () => {
+      const p = createPatient(ctx.db, { full_name: 'Coded', age: 20, age_unit: 'Years', gender: 'Male' });
+      expect(p.patient_code).toMatch(/^P-\d{6}$/);
     });
   });
 
   describe('createReport with an existing patient id', () => {
-    it('applies edits to the existing patient on the very first save, not just later ones', () => {
-      const original = createPatient(ctx.db, { full_name: 'Typo Nam', age: 31, age_unit: 'Years', gender: 'Male', phone: '0722000333' });
+    it('uses the saved patient exactly as stored and ignores edited details', () => {
+      const original = createPatient(ctx.db, { full_name: 'Stored Name', age: 31, age_unit: 'Years', gender: 'Male', phone: '0722000333' });
       const report = createReport(
         ctx.db,
         {
-          patient: { id: original.id, full_name: 'Typo Name Corrected', age: 32, age_unit: 'Years', gender: 'Male' },
+          patient: { id: original.id, full_name: 'Tampered Name', age: 99, age_unit: 'Years', gender: 'Female' },
           doctor_id: null,
           tests: [],
         },
         null
       );
-      const updated = getPatientById(ctx.db, original.id);
-      expect(updated?.full_name).toBe('Typo Name Corrected');
-      expect(updated?.age).toBe(32);
-      expect(report.patient_id).toBe(original.id); // same patient row, not a duplicate
+      const after = getPatientById(ctx.db, original.id);
+      expect(after?.full_name).toBe('Stored Name');
+      expect(after?.age).toBe(31);
+      expect(report.patient_id).toBe(original.id);
     });
   });
 });

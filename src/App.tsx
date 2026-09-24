@@ -1,20 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { createHashRouter, RouterProvider, Outlet, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import Dashboard from './pages/Dashboard';
-import NewReport from './pages/NewReport';
-import Reports from './pages/Reports';
-import Patients from './pages/Patients';
-import PatientProfile from './pages/PatientProfile';
-import TestCatalog from './pages/TestCatalog';
-import Revenue from './pages/Revenue';
-import TestReport from './pages/TestReport';
-import Users from './pages/Users';
-import AuditLog from './pages/AuditLog';
-import Settings from './pages/Settings';
-import PrintReport from './pages/PrintReport';
 import PrintTemplateRoute from './pages/PrintTemplateRoute';
 import AlignmentTestPage from './pages/AlignmentTestPage';
 import RevenuePrintTemplate from './pages/RevenuePrintTemplate';
@@ -131,6 +120,13 @@ function Gate() {
   return <AppLayout />;
 }
 
+// Screens other than the Dashboard are loaded the first time they're opened
+// rather than all at startup, so the app opens faster on slower PCs. Print
+// templates stay eagerly loaded so printing never waits on a download.
+function page(load: () => Promise<{ default: ComponentType }>) {
+  return async () => ({ Component: (await load()).default });
+}
+
 // A data router (not a plain <HashRouter>/<Routes> tree) so pages like New
 // Report can use useBlocker to warn before navigating away with unsaved
 // changes — that hook only works with a data router.
@@ -149,18 +145,18 @@ const router = createHashRouter([
     // Sidebar/TopBar stay mounted and the rest of the app stays usable.
     children: [
       { index: true, element: <Dashboard />, errorElement: <RouteErrorBoundary /> },
-      { path: 'new-report', element: <NewReport />, errorElement: <RouteErrorBoundary /> },
-      { path: 'new-report/:id', element: <NewReport />, errorElement: <RouteErrorBoundary /> },
-      { path: 'reports', element: <Reports />, errorElement: <RouteErrorBoundary /> },
-      { path: 'reports/:id/print', element: <PrintReport />, errorElement: <RouteErrorBoundary /> },
-      { path: 'patients', element: <Patients />, errorElement: <RouteErrorBoundary /> },
-      { path: 'patients/:id', element: <PatientProfile />, errorElement: <RouteErrorBoundary /> },
-      { path: 'tests', element: <TestCatalog />, errorElement: <RouteErrorBoundary /> },
-      { path: 'revenue', element: <Revenue />, errorElement: <RouteErrorBoundary /> },
-      { path: 'test-report', element: <TestReport />, errorElement: <RouteErrorBoundary /> },
-      { path: 'users', element: <Users />, errorElement: <RouteErrorBoundary /> },
-      { path: 'audit', element: <AuditLog />, errorElement: <RouteErrorBoundary /> },
-      { path: 'settings', element: <Settings />, errorElement: <RouteErrorBoundary /> },
+      { path: 'new-report', lazy: page(() => import('./pages/NewReport')), errorElement: <RouteErrorBoundary /> },
+      { path: 'new-report/:id', lazy: page(() => import('./pages/NewReport')), errorElement: <RouteErrorBoundary /> },
+      { path: 'reports', lazy: page(() => import('./pages/Reports')), errorElement: <RouteErrorBoundary /> },
+      { path: 'reports/:id/print', lazy: page(() => import('./pages/PrintReport')), errorElement: <RouteErrorBoundary /> },
+      { path: 'patients', lazy: page(() => import('./pages/Patients')), errorElement: <RouteErrorBoundary /> },
+      { path: 'patients/:id', lazy: page(() => import('./pages/PatientProfile')), errorElement: <RouteErrorBoundary /> },
+      { path: 'tests', lazy: page(() => import('./pages/TestCatalog')), errorElement: <RouteErrorBoundary /> },
+      { path: 'revenue', lazy: page(() => import('./pages/Revenue')), errorElement: <RouteErrorBoundary /> },
+      { path: 'test-report', lazy: page(() => import('./pages/TestReport')), errorElement: <RouteErrorBoundary /> },
+      { path: 'users', lazy: page(() => import('./pages/Users')), errorElement: <RouteErrorBoundary /> },
+      { path: 'audit', lazy: page(() => import('./pages/AuditLog')), errorElement: <RouteErrorBoundary /> },
+      { path: 'settings', lazy: page(() => import('./pages/Settings')), errorElement: <RouteErrorBoundary /> },
     ],
   },
 ]);

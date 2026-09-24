@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   FilePlus2,
@@ -31,7 +31,7 @@ interface NavLinkDef {
 
 const links: NavLinkDef[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/new-report', label: 'New Report', icon: FilePlus2, end: false, roles: ['ADMIN', 'RECEPTION'] },
+  { to: '/new-report', label: 'New Report', icon: FilePlus2, end: true, roles: ['ADMIN', 'RECEPTION'] },
   { to: '/reports', label: 'Reports History', icon: FileText, end: false },
   { to: '/patients', label: 'Patients', icon: UsersIcon, end: false, roles: ['ADMIN', 'RECEPTION'] },
   { to: '/tests', label: 'Test Catalog', icon: ClipboardList, end: false, roles: ['ADMIN'] },
@@ -66,6 +66,11 @@ export default function Sidebar() {
       return next;
     });
   };
+
+  // An existing report opens in the editor at /new-report/:id — that's part
+  // of Reports History, not a new report, so highlight Reports History.
+  const { pathname } = useLocation();
+  const editingReport = /^\/new-report\/\d+/.test(pathname);
 
   const visibleLinks = links.filter((link) => !link.roles || (user && link.roles.includes(user.role)));
 
@@ -104,7 +109,7 @@ export default function Sidebar() {
               cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 collapsed && 'justify-center px-0',
-                isActive ? 'bg-white text-primary shadow-sm' : 'text-primary-foreground/80 hover:bg-white/10 hover:text-white'
+                isActive || (editingReport && link.to === '/reports') ? 'bg-white text-primary shadow-sm' : 'text-primary-foreground/80 hover:bg-white/10 hover:text-white'
               )
             }
           >
