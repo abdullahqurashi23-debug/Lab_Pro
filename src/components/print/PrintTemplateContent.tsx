@@ -4,13 +4,9 @@ import { toFileUrl } from '@/lib/fileUrl';
 import type { ClinicSettings, ReportWithDetails } from '@/lib/types';
 import type { PrintLayout } from '@/db/printLayout';
 
-// A single fixed brand accent (never a theme CSS variable — this has to
-// render identically no matter what theme happens to be active in the
-// window that triggered the print, same reasoning as the black/gray text
-// elsewhere in this file). Used sparingly, as a short underline rather
-// than full-width rules, so the report reads as designed rather than just
-// boxed off in black lines everywhere.
-const ACCENT = '#0a7168';
+// Everything is solid black on white, with no grey text, colour or tinted
+// fills: mono laser printers render grey and colour as a dotted halftone,
+// which made parts of the printed report look fuzzy next to crisp black text.
 
 function Barcode({ value }: { value: string }) {
   const ref = useRef<SVGSVGElement>(null);
@@ -74,26 +70,14 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            <td className="pb-3">
-              <div className="text-center mb-2">
-                <div
-                  className="font-bold text-[1.3em] tracking-[0.08em]"
-                  style={{ color: ACCENT }}
-                >
-                  LABORATORY REPORT
+            <td className="pb-4">
+              {/* No title: the pre-printed letterhead already names the
+                  lab. The patient box is the only bordered element. */}
+              <div className="rounded-md overflow-hidden" style={{ border: '1px solid #000' }}>
+                <div className="px-3 py-1" style={{ borderBottom: '1px solid #000' }}>
+                  <div className="font-bold text-[0.85em]">Patient &amp; Report Information</div>
                 </div>
-              </div>
-              {/* Same tinted-header-bar + bordered-box language as each
-                  test panel below, so the whole document reads as one
-                  consistently designed system rather than a title bolted
-                  onto a plain box. */}
-              <div className="rounded-md overflow-hidden" style={{ border: '1px solid #00000030' }}>
-                <div className="px-3 py-1.5" style={{ background: `${ACCENT}14` }}>
-                  <div className="font-bold text-[0.85em] tracking-wide" style={{ color: ACCENT }}>
-                    PATIENT &amp; REPORT INFORMATION
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 text-[0.9em]">
+                <div className="grid grid-cols-4 text-[0.85em]">
                   {[
                     ['Patient', report.patient_name],
                     ['Report No', report.report_no],
@@ -110,13 +94,13 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                   ].map(([label, value], i) => (
                     <div
                       key={label}
-                      className="px-3 py-1.5"
+                      className="px-3 py-1"
                       style={{
-                        borderLeft: i % 4 === 0 ? undefined : '1px solid #00000018',
-                        borderTop: i >= 4 ? '1px solid #00000018' : undefined,
+                        borderLeft: i % 4 === 0 ? undefined : '1px solid #000',
+                        borderTop: i >= 4 ? '1px solid #000' : undefined,
                       }}
                     >
-                      <div className="text-[0.72em] uppercase tracking-wide text-neutral-500 leading-tight">{label}</div>
+                      <div className="text-[0.85em] leading-tight">{label}</div>
                       {/* Wraps instead of truncating — a patient or doctor's
                           name silently cut off with "…" on an official
                           report is a real legibility problem, not just a
@@ -127,12 +111,11 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                 </div>
                 <div
                   className="flex items-center justify-end px-3 py-1"
-                  style={{ borderTop: '1px solid #00000018' }}
+                  style={{ borderTop: '1px solid #000' }}
                 >
                   <Barcode value={report.report_no} />
                 </div>
               </div>
-              <div style={{ height: 2, background: ACCENT, marginTop: 8 }} />
             </td>
           </tr>
         </thead>
@@ -140,16 +123,8 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
           <tr>
             <td>
               {(report.tests || []).map((rt) => (
-                <div key={rt.id} className="test-block mb-4 rounded-md overflow-hidden" style={{ border: '1px solid #00000022' }}>
-                  {/* A tinted section bar rather than plain bold text gives
-                      each test panel real visual weight/presence — the
-                      "big lab report" feel is mostly about clear, boxed
-                      structure, not about using more space. */}
-                  <div className="px-3 py-1.5" style={{ background: `${ACCENT}14` }}>
-                    <div className="font-bold text-[1em] tracking-wide" style={{ color: ACCENT }}>
-                      {rt.test_name_snapshot.toUpperCase()}
-                    </div>
-                  </div>
+                <div key={rt.id} className="test-block mb-4">
+                  <div className="px-3 py-1 font-bold text-[1em]">{rt.test_name_snapshot}</div>
                   {/* Fixed column widths (via colgroup + table-fixed) are
                       the only way to guarantee Result/Unit/Reference Range
                       line up at the same x-position across every test's
@@ -158,7 +133,7 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                       based on ITS OWN content, so column boundaries drift
                       test-to-test, especially when one test has only a
                       single short row (e.g. a qualitative result). */}
-                  <table className="w-full text-[0.95em] border-collapse table-fixed">
+                  <table className="w-full text-[0.9em] border-collapse table-fixed">
                     <colgroup>
                       <col style={{ width: '26%' }} />
                       <col style={{ width: '20%' }} />
@@ -166,22 +141,20 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                       <col style={{ width: '39%' }} />
                     </colgroup>
                     <thead>
-                      <tr className="text-left" style={{ borderBottom: '1px solid #00000030' }}>
-                        <th className="py-1.5 pl-3 pr-6 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">Test</th>
-                        <th className="py-1.5 px-2 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">Result</th>
-                        <th className="py-1.5 px-2 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">Unit</th>
-                        <th className="py-1.5 pl-2 pr-3 font-semibold text-[0.85em] uppercase tracking-wide text-neutral-500">
-                          Reference Range
-                        </th>
+                      <tr className="text-left">
+                        <th className="py-1 pl-3 pr-6 font-semibold text-[0.9em]">Test</th>
+                        <th className="py-1 px-2 font-semibold text-[0.9em]">Result</th>
+                        <th className="py-1 px-2 font-semibold text-[0.9em]">Unit</th>
+                        <th className="py-1 pl-2 pr-3 font-semibold text-[0.9em]">Reference Range</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(rt.results || []).map((r, i) => (
-                        <tr key={r.id} className="align-top" style={{ background: i % 2 === 1 ? '#00000006' : undefined }}>
-                          <td className="py-1.5 pl-3 pr-6 font-medium">{r.parameter_name_snapshot}</td>
-                          <td className="py-1.5 px-2 font-semibold">{r.value || '—'}</td>
-                          <td className="py-1.5 px-2 text-neutral-500">{r.unit_snapshot || '—'}</td>
-                          <td className="py-1.5 pl-2 pr-3 text-neutral-500">{r.ref_range_snapshot || '—'}</td>
+                      {(rt.results || []).map((r) => (
+                        <tr key={r.id} className="align-top">
+                          <td className="py-1 pl-3 pr-6 font-normal">{r.parameter_name_snapshot}</td>
+                          <td className="py-1 px-2 font-semibold">{r.value || '—'}</td>
+                          <td className="py-1 px-2">{r.unit_snapshot || '—'}</td>
+                          <td className="py-1 pl-2 pr-3">{r.ref_range_snapshot || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -190,16 +163,13 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
               ))}
 
               {report.notes && (
-                <div className="mt-4 mb-6 text-[0.95em] rounded-md p-3" style={{ border: '1px solid #00000022' }}>
-                  <div className="font-bold text-[0.85em] uppercase tracking-wide mb-1" style={{ color: ACCENT }}>
-                    Report Notes
-                  </div>
-                  <div className="whitespace-pre-wrap text-neutral-700">{report.notes}</div>
+                <div className="mt-4 mb-6 text-[0.9em] px-3">
+                  <div className="font-bold mb-1">Report Notes</div>
+                  <div className="whitespace-pre-wrap">{report.notes}</div>
                 </div>
               )}
 
-              <div style={{ height: 1, background: '#00000022', marginTop: 28 }} />
-              <div className="flex items-end justify-end mt-3">
+              <div className="flex items-end justify-end mt-10">
                 <div className="text-center text-[0.9em] shrink-0">
                   {clinic.signature_image_path && (
                     <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
@@ -207,7 +177,7 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                   <div className="border-t border-black pt-1 px-10 font-semibold">
                     {clinic.pathologist_name || 'Pathologist'}
                   </div>
-                  <div className="text-neutral-500">Signature</div>
+                  <div>Signature</div>
                 </div>
               </div>
             </td>

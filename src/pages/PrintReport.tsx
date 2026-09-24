@@ -65,8 +65,7 @@ export default function PrintReport() {
           if (result.fellBackToPdf) {
             toast.warning(`Direct printing failed (${result.error}). Opened the PDF instead — print it from there.`);
           } else {
-            const target = result.printer ? `"${result.printer}"` : 'printer';
-            toast.success(wasDraft ? `Report finalized and sent to ${target}.` : `Sent to ${target}.`);
+            toast.success(wasDraft ? 'Report finalized and sent to printer.' : 'Sent to printer.');
           }
         }
       } catch (err) {

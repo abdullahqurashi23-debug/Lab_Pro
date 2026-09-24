@@ -914,13 +914,13 @@ handle('revenue:exportExcel', async (_e, filters) => {
 // The PDF is only generated when direct printing fails, so the normal print
 // path never depends on printToPDF at all.
 async function printWithFallback(
-  print: () => Promise<string>,
+  print: () => Promise<void>,
   makeFallbackPdf: () => Promise<Buffer>,
   fallbackFileName: string
-): Promise<{ success: boolean; printer?: string; fellBackToPdf?: boolean; path?: string; error?: string }> {
+): Promise<{ success: boolean; fellBackToPdf?: boolean; path?: string; error?: string }> {
   try {
-    const printer = await print();
-    return { success: true, printer };
+    await print();
+    return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     try {

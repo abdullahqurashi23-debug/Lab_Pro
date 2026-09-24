@@ -15,12 +15,14 @@ import { mmToPt, type PrintLayout } from '../src/db/printLayout';
 
 const isDev = process.env.NODE_ENV === 'development';
 // Units differ between Electron's two print APIs: printToPDF() takes margins
-// in INCHES, while webContents.print() takes them in CSS pixels (96px =
-// 1in). Passing pixels to printToPDF (e.g. a 40mm top margin became "151
-// inches") left a negative printable area, so PDF generation failed/hung
-// and the Print button froze on "Printing…".
+// in INCHES, while webContents.print() passes its custom margins straight to
+// Chromium's print settings, which read them as POINTS (72pt = 1in) —
+// despite Electron's docs calling them pixels. Sending 96-per-inch pixels
+// there made every margin a third too big (40mm printed as ~53mm), pushing
+// a report that fits one A4 page onto a second page. Passing pixels to
+// printToPDF (a 40mm top margin became "151 inches") left a negative
+// printable area, so PDF generation failed/hung.
 const MM_PER_INCH = 25.4;
-const PX_PER_MM = 96 / MM_PER_INCH;
 
 // Neither printToPDF() nor webContents.print() come with a built-in
 // timeout — if either one never calls back (a bad printer driver, a stuck
@@ -37,10 +39,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-function mmToPx(mm: number): number {
-  return Math.round(mm * PX_PER_MM);
-}
-
 function mmToIn(mm: number): number {
   return mm / MM_PER_INCH;
 }
@@ -51,6 +49,10 @@ function templateUrl(hashPath: string): string {
   return `file://${indexPath}#${hashPath}`;
 }
 
+// Called only after loadURL() has resolved, i.e. after did-finish-load has
+// already fired — so this polls straight away instead of waiting for that
+// event. (It used to wait for did-finish-load, which never came a second
+// time, so polling never started and every print hung on "Printing…".)
 function waitForPrintReady(win: BrowserWindow, timeoutMs = 20000): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -76,8 +78,7 @@ function waitForPrintReady(win: BrowserWindow, timeoutMs = 20000): Promise<void>
       }
       setTimeout(check, 100);
     };
-    win.webContents.once('did-finish-load', () => setTimeout(check, 50));
-    win.webContents.once('did-fail-load', (_e, code, desc) => reject(new Error(`Failed to load print template: ${desc} (${code})`)));
+    check();
   });
 }
 
@@ -248,18 +249,14 @@ export async function generateTestReportPdf(
 //
 // Trade-off: the pdf-lib "Page X of Y" stamp only exists in generated PDFs,
 // so it isn't on direct paper prints.
-async function printTemplate(hashPath: string, layout: PrintLayout): Promise<string> {
+async function printTemplate(hashPath: string, layout: PrintLayout): Promise<void> {
   const win = await openTemplateWindow(hashPath);
   try {
-    const printers = await win.webContents.getPrintersAsync();
-    const printer = printers.find((p) => p.isDefault);
-    if (!printer) {
-      throw new Error(
-        printers.length === 0
-          ? 'No printer is installed on this computer.'
-          : 'No default printer is set in Windows. Set one under Settings → Bluetooth & devices → Printers & scanners.'
-      );
-    }
+    // No deviceName: a silent print with no device goes to the OS default
+    // printer. Looking the printer up first via getPrintersAsync() is avoided
+    // on purpose — on Windows it can never resolve (seen with Fax/OneNote
+    // virtual printers installed), which froze the Print button forever.
+    //
     // webContents.print() returns void, not a Promise; the callback is the
     // only completion signal. It is not guaranteed to fire with every
     // driver, hence the timeout.
@@ -268,48 +265,46 @@ async function printTemplate(hashPath: string, layout: PrintLayout): Promise<str
         win.webContents.print(
           {
             silent: true,
-            deviceName: printer.name,
             printBackground: true,
             pageSize: layout.paperSize,
             margins: {
               marginType: 'custom',
-              top: mmToPx(layout.topMarginMm),
-              bottom: mmToPx(layout.bottomMarginMm),
-              left: mmToPx(layout.leftMarginMm),
-              right: mmToPx(layout.rightMarginMm),
+              top: Math.round(mmToPt(layout.topMarginMm)),
+              bottom: Math.round(mmToPt(layout.bottomMarginMm)),
+              left: Math.round(mmToPt(layout.leftMarginMm)),
+              right: Math.round(mmToPt(layout.rightMarginMm)),
             },
           },
           (success, failureReason) => {
             if (success) resolve();
-            else reject(new Error(failureReason || `Printing to "${printer.displayName || printer.name}" failed.`));
+            else reject(new Error(failureReason || 'Printing failed — check that the default printer is connected and online.'));
           }
         );
       }),
       60000,
       'Printing timed out after 60 seconds — check that the printer is switched on and try again.'
     );
-    return printer.displayName || printer.name;
   } finally {
     win.destroy();
   }
 }
 
-export function printReport(reportId: number, mode: 'paper' | 'pdf', layout: PrintLayout): Promise<string> {
+export function printReport(reportId: number, mode: 'paper' | 'pdf', layout: PrintLayout): Promise<void> {
   return printTemplate(`/print-template/${reportId}?mode=${mode}`, layout);
 }
 
-export function printAlignmentTestPage(layout: PrintLayout): Promise<string> {
+export function printAlignmentTestPage(layout: PrintLayout): Promise<void> {
   return printTemplate('/print-template/alignment-test', layout);
 }
 
-export function printRevenue(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<string> {
+export function printRevenue(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<void> {
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);
   return printTemplate(`/print-template/revenue?${params.toString()}`, layout);
 }
 
-export function printTestReport(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<string> {
+export function printTestReport(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<void> {
   const params = new URLSearchParams({ granularity: filters.granularity });
   if (filters.from) params.set('from', filters.from);
   if (filters.to) params.set('to', filters.to);

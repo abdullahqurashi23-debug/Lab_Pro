@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
 import PrintTemplateContent from '@/components/print/PrintTemplateContent';
 import { mergePrintLayout, type PrintLayout } from '@/db/printLayout';
-import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
+import { waitForFontsAndPaint, fitToOnePage, markPrintReady, markPrintError } from '@/lib/printReady';
 import type { ClinicSettings, ReportWithDetails } from '@/lib/types';
 
 interface LoadedData {
@@ -26,6 +26,7 @@ export default function PrintTemplateRoute() {
   const [searchParams] = useSearchParams();
   const mode = searchParams.get('mode') === 'pdf' ? 'pdf' : 'paper';
   const [data, setData] = useState<LoadedData | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +76,9 @@ export default function PrintTemplateRoute() {
         )
       );
       await waitForFontsAndPaint();
+      if (cancelled || !contentRef.current) return;
+      fitToOnePage(contentRef.current, data.layout);
+      await waitForFontsAndPaint();
       if (!cancelled) markPrintReady();
     };
     waitUntilReady();
@@ -87,13 +91,15 @@ export default function PrintTemplateRoute() {
 
   return (
     <div className="bg-white text-black min-h-screen">
-      <PrintTemplateContent
-        report={data.report}
-        clinic={data.clinic}
-        layout={data.layout}
-        mode={mode}
-        showInlineHeaderFooterImages={mode === 'pdf'}
-      />
+      <div ref={contentRef}>
+        <PrintTemplateContent
+          report={data.report}
+          clinic={data.clinic}
+          layout={data.layout}
+          mode={mode}
+          showInlineHeaderFooterImages={mode === 'pdf'}
+        />
+      </div>
     </div>
   );
 }
