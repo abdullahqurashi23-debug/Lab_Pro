@@ -14,6 +14,9 @@ name: Build Windows Installer
 #               with Electron 22 builds. Same app name, so the database
 #               location is identical: a lab moving from Windows 7 to 10 just
 #               installs the standard edition and keeps all its data.
+#
+# Installers are written to release/ (see "directories" in package.json),
+# never into dist/, which holds the app files being packaged.
 on:
   workflow_dispatch: {}
   push:
@@ -59,4 +62,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/*.exe
+          path: release/*.exe
