@@ -10,13 +10,17 @@
 // margin area.
 import { BrowserWindow } from 'electron';
 import path from 'path';
-import fs from 'fs';
-import os from 'os';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { mmToPt, type PrintLayout } from '../src/db/printLayout';
 
 const isDev = process.env.NODE_ENV === 'development';
-const PX_PER_MM = 96 / 25.4; // printToPDF's custom margins are in CSS pixels (96px = 1in)
+// Units differ between Electron's two print APIs: printToPDF() takes margins
+// in INCHES, while webContents.print() takes them in CSS pixels (96px =
+// 1in). Passing pixels to printToPDF (e.g. a 40mm top margin became "151
+// inches") left a negative printable area, so PDF generation failed/hung
+// and the Print button froze on "Printing…".
+const MM_PER_INCH = 25.4;
+const PX_PER_MM = 96 / MM_PER_INCH;
 
 // Neither printToPDF() nor webContents.print() come with a built-in
 // timeout — if either one never calls back (a bad printer driver, a stuck
@@ -35,6 +39,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 
 function mmToPx(mm: number): number {
   return Math.round(mm * PX_PER_MM);
+}
+
+function mmToIn(mm: number): number {
+  return mm / MM_PER_INCH;
 }
 
 function templateUrl(hashPath: string): string {
@@ -73,7 +81,9 @@ function waitForPrintReady(win: BrowserWindow, timeoutMs = 20000): Promise<void>
   });
 }
 
-async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFooterHtml?: { header: string; footer: string }): Promise<Buffer> {
+// Loads a print-template route into a hidden window and waits until it has
+// signalled data-print-ready. The caller owns the window and must destroy it.
+async function openTemplateWindow(hashPath: string): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -108,6 +118,16 @@ async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFo
     // timeouts below ever got a chance to run.
     await withTimeout(win.loadURL(templateUrl(hashPath)), 20000, 'Loading the print page timed out after 20 seconds.');
     await waitForPrintReady(win);
+    return win;
+  } catch (err) {
+    win.destroy();
+    throw err;
+  }
+}
+
+async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFooterHtml?: { header: string; footer: string }): Promise<Buffer> {
+  const win = await openTemplateWindow(hashPath);
+  try {
     // printToPDF() has no built-in timeout of its own — on some machines
     // (bad GPU/print-driver state, a stuck spooler) it simply never
     // resolves. Without this, that hang is invisible: the renderer's
@@ -122,11 +142,10 @@ async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFo
         headerTemplate: headerFooterHtml?.header || '<span></span>',
         footerTemplate: headerFooterHtml?.footer || '<span></span>',
         margins: {
-          marginType: 'custom',
-          top: mmToPx(layout.topMarginMm),
-          bottom: mmToPx(layout.bottomMarginMm),
-          left: mmToPx(layout.leftMarginMm),
-          right: mmToPx(layout.rightMarginMm),
+          top: mmToIn(layout.topMarginMm),
+          bottom: mmToIn(layout.bottomMarginMm),
+          left: mmToIn(layout.leftMarginMm),
+          right: mmToIn(layout.rightMarginMm),
         },
       }),
       30000,
@@ -217,59 +236,82 @@ export async function generateTestReportPdf(
   return addPageNumbers(raw, layout);
 }
 
-export async function printPdfBuffer(pdfBuffer: Buffer): Promise<void> {
-  const tempPath = path.join(os.tmpdir(), `labpro-print-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
-  fs.writeFileSync(tempPath, pdfBuffer);
-  // `plugins: true` is required for Chromium's built-in PDF viewer to
-  // actually render the file instead of triggering a download.
-  const win = new BrowserWindow({ show: false, webPreferences: { plugins: true, sandbox: true } });
-  // This window exists to display exactly one local temp PDF and then get
-  // destroyed — it never legitimately needs to navigate anywhere else.
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (event) => event.preventDefault());
+// Direct printing sends the rendered print-template page itself to the
+// OS default printer, with the same paper size and margins as the PDF.
+//
+// It deliberately does NOT go through a PDF: the old approach loaded the
+// generated PDF into a hidden window and called webContents.print() on it,
+// but Chromium shows PDFs through its viewer plugin in a separate frame,
+// and printing that from a hidden window is unreliable in Electron (blank
+// pages, a print dialog that never appears or never calls back), which is
+// what left the Print button stuck on "Printing…".
+//
+// Trade-off: the pdf-lib "Page X of Y" stamp only exists in generated PDFs,
+// so it isn't on direct paper prints.
+async function printTemplate(hashPath: string, layout: PrintLayout): Promise<string> {
+  const win = await openTemplateWindow(hashPath);
   try {
-    await withTimeout(win.loadURL(`file://${tempPath}`), 20000, 'Loading the PDF for printing timed out after 20 seconds.');
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    // showInactive() renders the window without stealing focus from
-    // whatever the user was doing — some Windows printer drivers only
-    // reliably fire the print() callback for a window that has actually
-    // been shown/composited at least once; a window that's never left
-    // show:false is more likely to be the thing silently never calling
-    // back. This is the one deliberate on-screen moment in the whole
-    // print pipeline, and only for the fraction of a second before the OS
-    // print dialog itself takes over.
-    win.showInactive();
-    // webContents.print() returns void, NOT a Promise — confirmed directly
-    // against electron.d.ts. The previous `await win.webContents.print(...)`
-    // therefore resolved immediately regardless of what actually happened,
-    // so the window (and the print job with it) could get destroyed before
-    // the OS print dialog was even shown, and neither a real failure (no
-    // printer configured, driver error, etc.) nor a successful print was
-    // ever actually detected — the app always reported "sent to printer"
-    // no matter what. The real completion signal is the callback argument.
-    //
-    // Also wrapped in withTimeout: this callback is not guaranteed to ever
-    // fire on every machine/driver combination — without a bound, that
-    // failure mode is an invisible, permanent freeze instead of a message
-    // the user can act on.
+    const printers = await win.webContents.getPrintersAsync();
+    const printer = printers.find((p) => p.isDefault);
+    if (!printer) {
+      throw new Error(
+        printers.length === 0
+          ? 'No printer is installed on this computer.'
+          : 'No default printer is set in Windows. Set one under Settings → Bluetooth & devices → Printers & scanners.'
+      );
+    }
+    // webContents.print() returns void, not a Promise; the callback is the
+    // only completion signal. It is not guaranteed to fire with every
+    // driver, hence the timeout.
     await withTimeout(
       new Promise<void>((resolve, reject) => {
-        win.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
-          // A user clicking "Cancel" in the OS print dialog reports
-          // success:false with a reason like "cancelled" — that's a normal,
-          // expected action, not an error worth surfacing as a failure toast.
-          if (success || /cancel/i.test(failureReason)) {
-            resolve();
-          } else {
-            reject(new Error(failureReason || 'Printing failed — check that a printer is connected and set up.'));
+        win.webContents.print(
+          {
+            silent: true,
+            deviceName: printer.name,
+            printBackground: true,
+            pageSize: layout.paperSize,
+            margins: {
+              marginType: 'custom',
+              top: mmToPx(layout.topMarginMm),
+              bottom: mmToPx(layout.bottomMarginMm),
+              left: mmToPx(layout.leftMarginMm),
+              right: mmToPx(layout.rightMarginMm),
+            },
+          },
+          (success, failureReason) => {
+            if (success) resolve();
+            else reject(new Error(failureReason || `Printing to "${printer.displayName || printer.name}" failed.`));
           }
-        });
+        );
       }),
-      30000,
-      'Printing timed out after 30 seconds — check that the printer is connected and try again.'
+      60000,
+      'Printing timed out after 60 seconds — check that the printer is switched on and try again.'
     );
+    return printer.displayName || printer.name;
   } finally {
     win.destroy();
-    fs.unlink(tempPath, () => {});
   }
+}
+
+export function printReport(reportId: number, mode: 'paper' | 'pdf', layout: PrintLayout): Promise<string> {
+  return printTemplate(`/print-template/${reportId}?mode=${mode}`, layout);
+}
+
+export function printAlignmentTestPage(layout: PrintLayout): Promise<string> {
+  return printTemplate('/print-template/alignment-test', layout);
+}
+
+export function printRevenue(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<string> {
+  const params = new URLSearchParams({ granularity: filters.granularity });
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  return printTemplate(`/print-template/revenue?${params.toString()}`, layout);
+}
+
+export function printTestReport(filters: { granularity: string; from?: string; to?: string }, layout: PrintLayout): Promise<string> {
+  const params = new URLSearchParams({ granularity: filters.granularity });
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  return printTemplate(`/print-template/test-report?${params.toString()}`, layout);
 }

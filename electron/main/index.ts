@@ -29,7 +29,16 @@ import {
   printSettingsRepo,
   setupRepo,
 } from '../../src/db/repositories';
-import { generateReportPdf, generateAlignmentTestPage, generateRevenuePdf, generateTestReportPdf, printPdfBuffer } from '../print';
+import {
+  generateReportPdf,
+  generateAlignmentTestPage,
+  generateRevenuePdf,
+  generateTestReportPdf,
+  printReport,
+  printAlignmentTestPage,
+  printRevenue,
+  printTestReport,
+} from '../print';
 import { buildArchivePath } from '../reportArchive';
 import type { PublicUser, Role, ReportWithDetails } from '../../src/db/repositories';
 import {
@@ -902,16 +911,20 @@ handle('revenue:exportExcel', async (_e, filters) => {
 // never calls back), this hands the user a real PDF file — opened
 // immediately in whatever the OS's default PDF viewer is — instead of just
 // reporting failure with no path forward.
+// The PDF is only generated when direct printing fails, so the normal print
+// path never depends on printToPDF at all.
 async function printWithFallback(
-  pdfBuffer: Buffer,
+  print: () => Promise<string>,
+  makeFallbackPdf: () => Promise<Buffer>,
   fallbackFileName: string
-): Promise<{ success: boolean; fellBackToPdf?: boolean; path?: string; error?: string }> {
+): Promise<{ success: boolean; printer?: string; fellBackToPdf?: boolean; path?: string; error?: string }> {
   try {
-    await printPdfBuffer(pdfBuffer);
-    return { success: true };
+    const printer = await print();
+    return { success: true, printer };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     try {
+      const pdfBuffer = await makeFallbackPdf();
       const fallbackDir = path.join(getUserDataPath(), 'print-fallback');
       fs.mkdirSync(fallbackDir, { recursive: true });
       const fallbackPath = path.join(fallbackDir, fallbackFileName);
@@ -930,8 +943,11 @@ handle('revenue:print', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
   const parsed = revenuePeriodFiltersSchema.parse(filters);
   const layout = printSettingsRepo.getPrintLayout(db());
-  const pdfBuffer = await generateRevenuePdf(parsed, layout);
-  const result = await printWithFallback(pdfBuffer, `revenue-${parsed.granularity}-${Date.now()}.pdf`);
+  const result = await printWithFallback(
+    () => printRevenue(parsed, layout),
+    () => generateRevenuePdf(parsed, layout),
+    `revenue-${parsed.granularity}-${Date.now()}.pdf`
+  );
   if (!result.success) throw new Error(result.error);
   audit('PRINT', 'revenue', null, { ...parsed, fellBackToPdf: !!result.fellBackToPdf });
   return result;
@@ -961,8 +977,11 @@ handle('testreport:print', async (_e, filters) => {
   requireRole('ADMIN', 'RECEPTION');
   const parsed = revenuePeriodFiltersSchema.parse(filters);
   const layout = printSettingsRepo.getPrintLayout(db());
-  const pdfBuffer = await generateTestReportPdf(parsed, layout);
-  const result = await printWithFallback(pdfBuffer, `test-report-${parsed.granularity}-${Date.now()}.pdf`);
+  const result = await printWithFallback(
+    () => printTestReport(parsed, layout),
+    () => generateTestReportPdf(parsed, layout),
+    `test-report-${parsed.granularity}-${Date.now()}.pdf`
+  );
   if (!result.success) throw new Error(result.error);
   audit('PRINT', 'test_report', null, { ...parsed, fellBackToPdf: !!result.fellBackToPdf });
   return result;
@@ -1149,24 +1168,23 @@ handle('print:report', async (_e, reportId, mode) => {
     requireAuth();
   }
 
-  // A "pdf"-mode reprint of an already-archived report reuses that exact
-  // file byte-for-byte, so every reprint is provably identical to what was
-  // originally finalized. "paper" mode can never reuse it — the archived
-  // copy has the digital header/footer images baked into the margins,
-  // which would print on top of physical letterhead — so it's always
-  // freshly rendered with blank margins instead.
-  let result: { success: boolean; fellBackToPdf?: boolean; path?: string; error?: string };
-  if (printMode === 'pdf' && report.pdf_path && fs.existsSync(report.pdf_path)) {
-    result = await printWithFallback(fs.readFileSync(report.pdf_path), `${report.report_no}-${Date.now()}.pdf`);
-  } else {
-    const layout = printSettingsRepo.getPrintLayout(db());
-    const clinic = clinicSettingsRepo.getClinicSettings(db());
-    const pdfBuffer = await generateReportPdf(id, printMode, layout, {
-      headerImagePath: clinic.header_image_path,
-      footerImagePath: clinic.footer_image_path,
-    });
-    result = await printWithFallback(pdfBuffer, `${report.report_no}-${Date.now()}.pdf`);
-  }
+  // The page is printed directly from the rendered template. If that fails,
+  // a "pdf"-mode request falls back to the archived file byte-for-byte when
+  // one exists; otherwise a fresh PDF is rendered.
+  const layout = printSettingsRepo.getPrintLayout(db());
+  const clinic = clinicSettingsRepo.getClinicSettings(db());
+  const archivedPdf = report.pdf_path;
+  const result = await printWithFallback(
+    () => printReport(id, printMode, layout),
+    async () =>
+      printMode === 'pdf' && archivedPdf && fs.existsSync(archivedPdf)
+        ? fs.readFileSync(archivedPdf)
+        : generateReportPdf(id, printMode, layout, {
+            headerImagePath: clinic.header_image_path,
+            footerImagePath: clinic.footer_image_path,
+          }),
+    `${report.report_no}-${Date.now()}.pdf`
+  );
   if (!result.success) throw new Error(result.error);
   audit('PRINT', 'report', id, { mode: printMode, fellBackToPdf: !!result.fellBackToPdf });
   return result;
@@ -1230,8 +1248,11 @@ handle('print:savePdf', async (_e, reportId) => {
 handle('print:testPage', async () => {
   requireAdmin();
   const layout = printSettingsRepo.getPrintLayout(db());
-  const pdfBuffer = await generateAlignmentTestPage(layout);
-  const result = await printWithFallback(pdfBuffer, `alignment-test-${Date.now()}.pdf`);
+  const result = await printWithFallback(
+    () => printAlignmentTestPage(layout),
+    () => generateAlignmentTestPage(layout),
+    `alignment-test-${Date.now()}.pdf`
+  );
   if (!result.success) throw new Error(result.error);
   return result;
 });

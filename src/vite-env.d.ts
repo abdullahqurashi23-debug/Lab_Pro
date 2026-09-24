@@ -60,6 +60,7 @@ export interface OkResult {
 
 export interface PrintResult {
   success: boolean;
+  printer?: string;
   fellBackToPdf?: boolean;
   path?: string;
   error?: string;

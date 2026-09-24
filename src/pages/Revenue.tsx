@@ -170,7 +170,7 @@ export default function Revenue() {
         if (result.fellBackToPdf) {
           toast.warning(`Direct printing failed (${result.error}). Opened the PDF instead — print it from there.`);
         } else {
-          toast.success('Sent to printer.');
+          toast.success(result.printer ? `Sent to "${result.printer}".` : 'Sent to printer.');
         }
       }
     } catch (err) {
