@@ -1,12 +1,16 @@
 import { useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
 import { toFileUrl } from '@/lib/fileUrl';
+import { localDateTime } from '@/lib/localTime';
 import type { ClinicSettings, ReportWithDetails } from '@/lib/types';
 import type { PrintLayout } from '@/db/printLayout';
 
-// Everything is solid black on white, with no grey text, colour or tinted
-// fills: mono laser printers render grey and colour as a dotted halftone,
-// which made parts of the printed report look fuzzy next to crisp black text.
+// Laid out to match the lab's existing pre-printed-letterhead reports:
+// a three-column patient / sample / dates block, then each test as a
+// centred heading over an Investigation / Result / Reference Value / Unit
+// table. Everything is solid black on white, with no grey text, colour or
+// tinted fills: mono laser printers render grey and colour as a dotted
+// halftone, which made parts of the printed report look fuzzy.
 
 function Barcode({ value }: { value: string }) {
   const ref = useRef<SVGSVGElement>(null);
@@ -17,9 +21,8 @@ function Barcode({ value }: { value: string }) {
         format: 'CODE128',
         width: 1.3,
         height: 30,
-        // The report number is already printed as text right next to this
-        // (the "Report No" field) — repeating it again under the bars just
-        // added height for nothing, so it's off here rather than shrunk.
+        // The report number is already printed as text elsewhere on the
+        // report — repeating it under the bars just added height.
         displayValue: false,
         // A real scanner needs blank "quiet zone" space on either side of
         // the bars to lock onto the start/stop patterns — margin: 0 (an
@@ -48,18 +51,24 @@ interface PrintTemplateContentProps {
   showInlineHeaderFooterImages?: boolean;
 }
 
+// "Mr." / "Ms." for adults, as on the lab's existing reports; no title for
+// children or when gender isn't Male/Female.
+function titledName(report: ReportWithDetails): string {
+  const adult = report.age_unit === 'Years' && (report.age ?? 0) >= 18;
+  const title = !adult ? '' : report.gender === 'Male' ? 'Mr. ' : report.gender === 'Female' ? 'Ms. ' : '';
+  return `${title}${report.patient_name.toUpperCase()}`;
+}
+
+const RULE = '1px solid #000';
+
 // The patient block is the <thead> of a page-spanning table — Chromium
-// natively repeats a <thead> on every page a table spans (the same
-// mechanism that repeats column headers), and reserves the right amount of
-// space for it automatically. That's far more robust than trying to
-// reproduce a "repeating page header" with position:fixed and a manually
-// guessed height offset for the content that follows.
+// natively repeats a <thead> on every page a table spans, and reserves the
+// right amount of space for it automatically.
 export default function PrintTemplateContent({ report, clinic, layout, mode, showInlineHeaderFooterImages }: PrintTemplateContentProps) {
-  const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '—');
   // A draft being previewed hasn't been finalized yet, so finalized_at is
-  // still null — falling back to created_at means the date always shows
-  // something real (today's date, in practice) instead of a blank dash.
-  const reportDate = fmtDate(report.finalized_at || report.created_at);
+  // still null — fall back to created_at so a date always shows.
+  const reported = localDateTime(report.finalized_at || report.created_at);
+  const registered = localDateTime(report.created_at);
 
   return (
     <div style={{ fontSize: `${layout.baseFontSizePt}pt` }} className="font-sans text-black">
@@ -70,50 +79,30 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            <td className="pb-4">
-              {/* No title: the pre-printed letterhead already names the
-                  lab. The patient box is the only bordered element. */}
-              <div className="rounded-md overflow-hidden" style={{ border: '1px solid #000' }}>
-                <div className="px-3 py-1" style={{ borderBottom: '1px solid #000' }}>
-                  <div className="font-bold text-[0.85em]">Patient &amp; Report Information</div>
+            <td className="pb-2">
+              <div className="grid grid-cols-[1fr_1fr_1.1fr] text-[0.95em] leading-snug pb-2" style={{ borderBottom: RULE }}>
+                <div className="pr-3">
+                  <div className="font-bold text-[1.1em] mb-1 break-words">{titledName(report)}</div>
+                  <InfoRow label="Age:" value={`${report.age ?? '—'} ${report.age_unit}`} />
+                  <InfoRow label="Gender:" value={report.gender || '—'} />
+                  <InfoRow label="ClientID:" value={report.patient_code} />
                 </div>
-                <div className="grid grid-cols-4 text-[0.85em]">
-                  {[
-                    ['Patient', report.patient_name],
-                    ['Report No', report.report_no],
-                    ['Report Date', reportDate],
-                    ['Age', `${report.age ?? '—'} ${report.age_unit}`],
-                    ['Gender', report.gender || '—'],
-                    ['Patient ID', report.patient_code],
-                    ['Referred By', report.doctor_name || 'Self'],
-                    // The explicitly-entered technician name wins — it can
-                    // differ from whoever's software account clicked
-                    // Finalize (finalized_by_name), which older reports
-                    // (from before this field existed) fall back to.
-                    ['Performed By', report.performed_by || report.finalized_by_name || '—'],
-                  ].map(([label, value], i) => (
-                    <div
-                      key={label}
-                      className="px-3 py-1"
-                      style={{
-                        borderLeft: i % 4 === 0 ? undefined : '1px solid #000',
-                        borderTop: i >= 4 ? '1px solid #000' : undefined,
-                      }}
-                    >
-                      <div className="text-[0.85em] leading-tight">{label}</div>
-                      {/* Wraps instead of truncating — a patient or doctor's
-                          name silently cut off with "…" on an official
-                          report is a real legibility problem, not just a
-                          layout nicety. */}
-                      <div className="font-semibold leading-tight break-words">{value}</div>
-                    </div>
-                  ))}
+                <div className="px-3" style={{ borderLeft: RULE }}>
+                  <div className="font-bold mb-1">Sample Collected At:</div>
+                  <div>{clinic.clinic_name}</div>
+                  {clinic.address && <div className="whitespace-pre-line">{clinic.address}</div>}
+                  <div className="mt-2">
+                    Ref. By: <span className="font-bold">{report.doctor_name || 'Self'}</span>
+                  </div>
                 </div>
-                <div
-                  className="flex items-center justify-end px-3 py-1"
-                  style={{ borderTop: '1px solid #000' }}
-                >
-                  <Barcode value={report.report_no} />
+                <div className="pl-3" style={{ borderLeft: RULE }}>
+                  <div className="flex justify-end -mt-1">
+                    <Barcode value={report.report_no} />
+                  </div>
+                  <DateRow label="Report No:" value={report.report_no} />
+                  <DateRow label="Registered on:" value={registered} />
+                  <DateRow label="Collected on:" value={registered} />
+                  <DateRow label="Reported on:" value={reported} />
                 </div>
               </div>
             </td>
@@ -124,37 +113,31 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
             <td>
               {(report.tests || []).map((rt) => (
                 <div key={rt.id} className="test-block mb-4">
-                  <div className="px-3 py-1 font-bold text-[1em]">{rt.test_name_snapshot}</div>
-                  {/* Fixed column widths (via colgroup + table-fixed) are
-                      the only way to guarantee Result/Unit/Reference Range
-                      line up at the same x-position across every test's
-                      table down the page — a plain `w-full` table with no
-                      explicit widths auto-sizes each one independently
-                      based on ITS OWN content, so column boundaries drift
-                      test-to-test, especially when one test has only a
-                      single short row (e.g. a qualitative result). */}
-                  <table className="w-full text-[0.9em] border-collapse table-fixed">
+                  <div className="text-center font-bold text-[1.05em] tracking-wide mt-1 mb-1">
+                    {rt.test_name_snapshot.toUpperCase()}
+                  </div>
+                  <table className="w-full text-[0.95em] border-collapse table-fixed">
                     <colgroup>
-                      <col style={{ width: '26%' }} />
-                      <col style={{ width: '20%' }} />
-                      <col style={{ width: '15%' }} />
-                      <col style={{ width: '39%' }} />
+                      <col style={{ width: '40%' }} />
+                      <col style={{ width: '22%' }} />
+                      <col style={{ width: '24%' }} />
+                      <col style={{ width: '14%' }} />
                     </colgroup>
                     <thead>
                       <tr className="text-left">
-                        <th className="py-1 pl-3 pr-6 font-semibold text-[0.9em]">Test</th>
-                        <th className="py-1 px-2 font-semibold text-[0.9em]">Result</th>
-                        <th className="py-1 px-2 font-semibold text-[0.9em]">Unit</th>
-                        <th className="py-1 pl-2 pr-3 font-semibold text-[0.9em]">Reference Range</th>
+                        <th className="py-1 pr-4 font-bold text-[1.05em]">Investigation</th>
+                        <th className="py-1 pr-2 font-bold text-[1.05em]">Result</th>
+                        <th className="py-1 pr-2 font-bold text-[1.05em]">Reference Value</th>
+                        <th className="py-1 font-bold text-[1.05em]">Unit</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(rt.results || []).map((r) => (
                         <tr key={r.id} className="align-top">
-                          <td className="py-1 pl-3 pr-6 font-normal">{r.parameter_name_snapshot}</td>
-                          <td className="py-1 px-2 font-semibold">{r.value || '—'}</td>
-                          <td className="py-1 px-2">{r.unit_snapshot || '—'}</td>
-                          <td className="py-1 pl-2 pr-3">{r.ref_range_snapshot || '—'}</td>
+                          <td className="py-[3px] pl-2 pr-4 font-normal">{r.parameter_name_snapshot}</td>
+                          <td className="py-[3px] pr-2 font-semibold">{r.value || '—'}</td>
+                          <td className="py-[3px] pr-2">{r.ref_range_snapshot}</td>
+                          <td className="py-[3px]">{r.unit_snapshot}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -162,24 +145,26 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                 </div>
               ))}
 
+              <div style={{ borderTop: RULE }} />
+
               {report.notes && (
-                <div className="mt-4 mb-6 text-[0.9em] px-3">
-                  <div className="font-bold mb-1">Report Notes</div>
-                  <div className="whitespace-pre-wrap">{report.notes}</div>
+                <div className="mt-3 text-[0.95em]">
+                  <span className="font-bold">Notes: </span>
+                  <span className="whitespace-pre-wrap">{report.notes}</span>
                 </div>
               )}
 
-              <div className="flex items-end justify-end mt-10">
-                <div className="text-center text-[0.9em] shrink-0">
-                  {clinic.signature_image_path && (
-                    <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
-                  )}
-                  <div className="border-t border-black pt-1 px-10 font-semibold">
-                    {clinic.pathologist_name || 'Pathologist'}
+              {/* Only when configured — the lab's own paper uses a stamp. */}
+              {(clinic.signature_image_path || clinic.pathologist_name) && (
+                <div className="flex justify-end mt-8">
+                  <div className="text-center text-[0.9em]">
+                    {clinic.signature_image_path && (
+                      <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
+                    )}
+                    {clinic.pathologist_name && <div className="font-semibold">{clinic.pathologist_name}</div>}
                   </div>
-                  <div>Signature</div>
                 </div>
-              </div>
+              )}
             </td>
           </tr>
         </tbody>
@@ -188,6 +173,24 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
       {mode === 'pdf' && showInlineHeaderFooterImages && clinic.footer_image_path && (
         <img src={toFileUrl(clinic.footer_image_path)} alt="" className="w-full object-contain mt-4" />
       )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[4.5em_1fr]">
+      <span>{label}</span>
+      <span className="break-words">{value}</span>
+    </div>
+  );
+}
+
+function DateRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-2 whitespace-nowrap">
+      <span className="font-bold">{label}</span>
+      <span>{value}</span>
     </div>
   );
 }

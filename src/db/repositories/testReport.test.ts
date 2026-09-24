@@ -124,6 +124,17 @@ describe('test report — daily / weekly / monthly register', () => {
     expect(result.totals.subtotal).toBeGreaterThanOrEqual(400);
   });
 
+  it('sale lines: one per test, discount split by price and summing exactly to the report', () => {
+    finalizedReportOnDay(0, { price: 100, discount: 10, testCount: 3 });
+
+    const result = getTestReportForPeriod(ctx.db, { granularity: 'daily' });
+    expect(result.lines).toHaveLength(3);
+    expect(result.lines.map((l) => l.discount)).toEqual([3, 3, 4]);
+    expect(result.lineTotals.fee).toBe(300);
+    expect(result.lineTotals.discount).toBe(10);
+    expect(result.lineTotals.advance + result.lineTotals.remaining).toBe(290);
+  });
+
   it('never includes a draft report at any granularity', () => {
     draftReport(123456);
     for (const granularity of ['daily', 'weekly', 'monthly'] as const) {

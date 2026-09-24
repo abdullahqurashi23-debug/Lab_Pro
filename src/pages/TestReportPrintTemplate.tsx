@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
+import { localDate } from '@/lib/localTime';
 import type { ClinicSettings, RevenueGranularity, TestReportResult } from '@/lib/types';
 
 // Rendered only inside a hidden BrowserWindow for the Test Report page's
@@ -11,8 +12,8 @@ import type { ClinicSettings, RevenueGranularity, TestReportResult } from '@/lib
 // reasoning as RevenuePrintTemplate.tsx and PrintTemplateContent.tsx: a
 // printed business document must render identically regardless of
 // whatever theme happens to be active in the window that triggered it.
-function fmt(n: number) {
-  return `Af ${Number(n).toLocaleString()}`;
+function num(n: number) {
+  return Number(n).toLocaleString();
 }
 
 const GRANULARITY_LABEL: Record<RevenueGranularity, string> = {
@@ -66,48 +67,52 @@ export default function TestReportPrintTemplate() {
 
   if (!report || !clinic) return null;
 
+  const period = report.from === report.to ? report.from : `${report.from} to ${report.to}`;
+
+  // "Sale Report" layout: one line per test, solid black only (mono laser).
   return (
-    <div className="bg-white text-black font-sans text-[10pt] p-2">
-      <div className="text-center mb-6">
-        <div className="text-lg font-bold">{clinic.clinic_name}</div>
-        <div className="text-neutral-500 text-[0.9em] mt-1">
-          Test Report — {report.from === report.to ? report.from : `${report.from} to ${report.to}`} ({GRANULARITY_LABEL[granularity]})
-        </div>
+    <div className="bg-white text-black font-sans text-[9.5pt] p-2">
+      <div className="text-center mb-5">
+        <div className="text-[1.5em] font-bold">{clinic.clinic_name}</div>
+        {clinic.address && <div className="text-[1.15em] font-semibold whitespace-pre-line">{clinic.address}</div>}
+      </div>
+      <div className="text-center font-bold text-[1.1em]">SALE REPORT</div>
+      <div className="text-center text-[0.9em] mb-1">
+        {period} ({GRANULARITY_LABEL[granularity]})
       </div>
 
       <table className="w-full border-collapse table-fixed">
-        <colgroup>
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '30%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '12%' }} />
-          <col style={{ width: '11%' }} />
-          <col style={{ width: '13%' }} />
-        </colgroup>
+        <SaleColumns />
         <thead>
-          <tr className="text-left border-b border-black">
-            <th className="py-1 pr-2 font-medium">Patient</th>
-            <th className="py-1 pr-2 font-medium">Test(s)</th>
-            <th className="py-1 pr-2 font-medium">Referring Doctor</th>
-            <th className="py-1 pr-2 font-medium text-right whitespace-nowrap">Subtotal</th>
-            <th className="py-1 pr-2 font-medium text-right whitespace-nowrap">Discount</th>
-            <th className="py-1 font-medium text-right whitespace-nowrap">Total</th>
+          <tr className="text-left" style={{ borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+            <th className="py-1 pl-1 font-bold">No.</th>
+            <th className="py-1 font-bold">Date</th>
+            <th className="py-1 font-bold">LR No</th>
+            <th className="py-1 pr-2 font-bold">Patient Name</th>
+            <th className="py-1 pr-2 font-bold">Test Name</th>
+            <th className="py-1 pr-2 font-bold text-right">Fees</th>
+            <th className="py-1 pr-2 font-bold text-right">Discount</th>
+            <th className="py-1 pr-2 font-bold text-right">Advance</th>
+            <th className="py-1 font-bold text-right">Remaining</th>
           </tr>
         </thead>
         <tbody>
-          {report.rows.map((r) => (
-            <tr key={r.report_id} className="border-b border-black/10 align-top">
-              <td className="py-1 pr-2">{r.patient_name}</td>
-              <td className="py-1 pr-2">{r.test_codes.split(',').join(', ')}</td>
-              <td className="py-1 pr-2 text-neutral-500">{r.doctor_name || 'Self'}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{fmt(r.subtotal)}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{r.discount ? `-${fmt(r.discount)}` : '—'}</td>
-              <td className="py-1 text-right whitespace-nowrap font-medium">{fmt(r.total)}</td>
+          {report.lines.map((l, i) => (
+            <tr key={i} className="align-top">
+              <td className="py-[3px] pl-1">{i + 1}</td>
+              <td className="py-[3px] whitespace-nowrap">{localDate(l.created_at)}</td>
+              <td className="py-[3px] pr-1 break-all">{l.report_no}</td>
+              <td className="py-[3px] pr-2 uppercase">{l.patient_name}</td>
+              <td className="py-[3px] pr-2 uppercase">{l.test_name}</td>
+              <td className="py-[3px] pr-2 text-right">{num(l.fee)}</td>
+              <td className="py-[3px] pr-2 text-right">{num(l.discount)}</td>
+              <td className="py-[3px] pr-2 text-right">{num(l.advance)}</td>
+              <td className="py-[3px] text-right">{num(l.remaining)}</td>
             </tr>
           ))}
-          {report.rows.length === 0 && (
+          {report.lines.length === 0 && (
             <tr>
-              <td colSpan={6} className="py-4 text-center text-neutral-500">
+              <td colSpan={9} className="py-4 text-center">
                 No finalized reports in this period.
               </td>
             </tr>
@@ -119,28 +124,37 @@ export default function TestReportPrintTemplate() {
           which would make this grand-total row print once per page
           instead of once at the true end. A plain block after the
           table only ever renders where the table itself ends. */}
-      {report.rows.length > 0 && (
+      {report.lines.length > 0 && (
         <table className="w-full border-collapse table-fixed">
-          <colgroup>
-            <col style={{ width: '16%' }} />
-            <col style={{ width: '30%' }} />
-            <col style={{ width: '18%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '13%' }} />
-          </colgroup>
+          <SaleColumns />
           <tbody>
-            <tr className="border-t-2 border-black font-bold">
-              <td className="py-1.5 pr-2" colSpan={3}>
-                Total ({report.rows.length} report{report.rows.length === 1 ? '' : 's'})
-              </td>
-              <td className="py-1.5 pr-2 text-right whitespace-nowrap">{fmt(report.totals.subtotal)}</td>
-              <td className="py-1.5 pr-2 text-right whitespace-nowrap">{report.totals.discount ? `-${fmt(report.totals.discount)}` : '—'}</td>
-              <td className="py-1.5 text-right whitespace-nowrap">{fmt(report.totals.total)}</td>
+            <tr className="font-bold">
+              <td colSpan={5} />
+              <td className="py-1 pr-2 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.fee)}</td>
+              <td className="py-1 pr-2 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.discount)}</td>
+              <td className="py-1 pr-2 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.advance)}</td>
+              <td className="py-1 text-right" style={{ borderTop: '1px solid #000' }}>{num(report.lineTotals.remaining)}</td>
             </tr>
           </tbody>
         </table>
       )}
     </div>
+  );
+}
+
+// Shared by the lines table and the totals table so their columns line up.
+function SaleColumns() {
+  return (
+    <colgroup>
+      <col style={{ width: '5%' }} />
+      <col style={{ width: '12%' }} />
+      <col style={{ width: '15%' }} />
+      <col style={{ width: '15%' }} />
+      <col style={{ width: '21%' }} />
+      <col style={{ width: '8%' }} />
+      <col style={{ width: '8%' }} />
+      <col style={{ width: '8%' }} />
+      <col style={{ width: '8%' }} />
+    </colgroup>
   );
 }

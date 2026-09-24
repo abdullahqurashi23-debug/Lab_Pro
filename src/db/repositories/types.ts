@@ -362,4 +362,20 @@ export interface TestReportResult {
   to: string;
   rows: TestReportRow[];
   totals: { subtotal: number; discount: number; total: number };
+  lines: SaleReportLine[];
+  lineTotals: { fee: number; discount: number; advance: number; remaining: number };
+}
+
+// One printed "Sale Report" line: a single test, with its report's discount,
+// paid amount (advance) and balance (remaining) split in proportion to price.
+export interface SaleReportLine {
+  report_id: number;
+  report_no: string;
+  created_at: string;
+  patient_name: string;
+  test_name: string;
+  fee: number;
+  discount: number;
+  advance: number;
+  remaining: number;
 }
