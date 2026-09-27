@@ -346,7 +346,10 @@ handle('auth:login', (_e, rawUsername: string, rawPassword: string) => {
     // against unknown usernames still show up in the audit trail.
     audit('LOGIN_FAILED', 'user', user?.id ?? null, {
       username,
-      reason: !user ? 'unknown_username' : !user.is_active ? 'inactive_account' : 'wrong_password',
+      // Plain, already-readable phrases — the Audit Log only title-cases
+      // each detail's field NAME, not its value, so an internal code like
+      // "wrong_password" would otherwise show underscored and raw.
+      reason: !user ? 'Unknown username' : !user.is_active ? 'Account deactivated' : 'Wrong password',
     });
     return { ok: false, error: 'Invalid username or password.' };
   }

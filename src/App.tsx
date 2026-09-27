@@ -86,7 +86,8 @@ function Gate() {
 
   useIdleTimer(phase === 'unlocked' ? idleTimeoutMinutes : 0, () => {
     toast.message('Signed out after inactivity.');
-    logout('idle_timeout');
+    // Plain phrase, not a code — the Audit Log shows this reason as-is.
+    logout('Idle timeout');
   });
 
   if (phase === 'checking') {
