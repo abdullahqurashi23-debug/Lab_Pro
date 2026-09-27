@@ -16,6 +16,7 @@ import {
 import { FileSpreadsheet, FileText, Printer, TrendingUp, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
+import { formatCurrency as fmt } from '@/lib/currency';
 import { api } from '@/lib/api';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
@@ -66,10 +67,6 @@ function formatBucketLabel(bucket: string, granularity: RevenueGranularity): str
     return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short', year: '2-digit' });
   }
   return bucket.slice(5); // MM-DD
-}
-
-function fmt(n: number) {
-  return `Af ${Number(n).toLocaleString()}`;
 }
 
 function ChangeBadge({ pct, comparisonLabel }: { pct: number | null; comparisonLabel: string }) {

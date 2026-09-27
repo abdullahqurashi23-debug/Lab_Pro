@@ -143,6 +143,7 @@ async function renderToPdfBuffer(hashPath: string, layout: PrintLayout, headerFo
         headerTemplate: headerFooterHtml?.header || '<span></span>',
         footerTemplate: headerFooterHtml?.footer || '<span></span>',
         margins: {
+          marginType: 'custom',
           top: mmToIn(layout.topMarginMm),
           bottom: mmToIn(layout.bottomMarginMm),
           left: mmToIn(layout.leftMarginMm),
@@ -211,6 +212,15 @@ export async function generateAlignmentTestPage(layout: PrintLayout): Promise<Bu
   return renderToPdfBuffer('/print-template/alignment-test', layout);
 }
 
+// Shared by every Revenue/Test Report PDF+print entry point below, so the
+// from/to/granularity querystring is built in exactly one place.
+function periodQueryString(filters: { granularity: string; from?: string; to?: string }): string {
+  const params = new URLSearchParams({ granularity: filters.granularity });
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
+  return params.toString();
+}
+
 // These business reports print onto the same paper as patient reports (a
 // lab's pre-printed letterhead), so they use that same configured
 // PrintLayout for margins — the blank margin bands are what let the
@@ -219,10 +229,7 @@ export async function generateRevenuePdf(
   filters: { granularity: string; from?: string; to?: string },
   layout: PrintLayout
 ): Promise<Buffer> {
-  const params = new URLSearchParams({ granularity: filters.granularity });
-  if (filters.from) params.set('from', filters.from);
-  if (filters.to) params.set('to', filters.to);
-  const raw = await renderToPdfBuffer(`/print-template/revenue?${params.toString()}`, layout);
+  const raw = await renderToPdfBuffer(`/print-template/revenue?${periodQueryString(filters)}`, layout);
   return addPageNumbers(raw, layout);
 }
 
@@ -230,11 +237,8 @@ export async function generateTestReportPdf(
   filters: { granularity: string; from?: string; to?: string },
   layout: PrintLayout
 ): Promise<Buffer> {
-  const params = new URLSearchParams({ granularity: filters.granularity });
-  if (filters.from) params.set('from', filters.from);
-  if (filters.to) params.set('to', filters.to);
   const compact = saleReportLayout(layout);
-  const raw = await renderToPdfBuffer(`/print-template/test-report?${params.toString()}`, compact);
+  const raw = await renderToPdfBuffer(`/print-template/test-report?${periodQueryString(filters)}`, compact);
   return addPageNumbers(raw, compact);
 }
 
@@ -263,6 +267,13 @@ function saleReportLayout(layout: PrintLayout): PrintLayout {
 async function printTemplate(hashPath: string, layout: PrintLayout, printer: string): Promise<void> {
   const win = await openTemplateWindow(hashPath);
   try {
+    // Some Windows printer drivers only reliably fire the print() completion
+    // callback for a window that has actually been composited/shown at
+    // least once — a window created with show:false and never displayed can
+    // leave that callback waiting forever on those drivers. showInactive()
+    // shows the window without stealing OS focus from whatever the user was
+    // doing, so this is invisible to them but still satisfies the driver.
+    win.showInactive();
     // webContents.print() returns void, not a Promise; the callback is the
     // only completion signal. It is not guaranteed to fire with every
     // driver, hence the timeout.
@@ -329,10 +340,7 @@ export function printRevenue(
   layout: PrintLayout,
   printer: string
 ): Promise<void> {
-  const params = new URLSearchParams({ granularity: filters.granularity });
-  if (filters.from) params.set('from', filters.from);
-  if (filters.to) params.set('to', filters.to);
-  return printTemplate(`/print-template/revenue?${params.toString()}`, layout, printer);
+  return printTemplate(`/print-template/revenue?${periodQueryString(filters)}`, layout, printer);
 }
 
 export function printTestReport(
@@ -340,8 +348,5 @@ export function printTestReport(
   layout: PrintLayout,
   printer: string
 ): Promise<void> {
-  const params = new URLSearchParams({ granularity: filters.granularity });
-  if (filters.from) params.set('from', filters.from);
-  if (filters.to) params.set('to', filters.to);
-  return printTemplate(`/print-template/test-report?${params.toString()}`, saleReportLayout(layout), printer);
+  return printTemplate(`/print-template/test-report?${periodQueryString(filters)}`, saleReportLayout(layout), printer);
 }

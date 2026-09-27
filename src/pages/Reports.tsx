@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
+import { formatCurrency as fmt } from '@/lib/currency';
 import { api } from '@/lib/api';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { Doctor, ReportListRow, ReportSortKey } from '@/lib/types';
@@ -151,7 +152,6 @@ export default function Reports() {
     }
   };
 
-  const fmt = (n: number) => `Af ${n.toLocaleString()}`;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(total, page * PAGE_SIZE);

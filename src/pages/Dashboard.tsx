@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Plus } from 'lucide-react';
 import { showErrorDialog } from '@/lib/errorDialog';
+import { formatCurrency as fmt } from '@/lib/currency';
 import { api } from '@/lib/api';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { DashboardStats, ReportListRow } from '@/lib/types';
@@ -60,8 +61,6 @@ export default function Dashboard() {
     reports: d.count,
   }));
   const recentReports = stats.recentReports || [];
-
-  const fmt = (n: number) => `Af ${Number(n).toLocaleString()}`;
 
   const openReport = (r: ReportListRow) => {
     navigate(r.status === 'FINALIZED' ? `/reports/${r.id}/print` : `/new-report/${r.id}`);

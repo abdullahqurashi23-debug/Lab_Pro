@@ -181,8 +181,8 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                         <tr key={r.id} className="align-top">
                           <td className="py-[3px] pl-2 pr-4 font-normal">{r.parameter_name_snapshot}</td>
                           <td className="py-[3px] pr-2">{r.value || '—'}</td>
-                          <td className="py-[3px] pr-2">{r.ref_range_snapshot}</td>
-                          <td className="py-[3px]">{r.unit_snapshot}</td>
+                          <td className="py-[3px] pr-2">{r.ref_range_snapshot || '—'}</td>
+                          <td className="py-[3px]">{r.unit_snapshot || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -199,24 +199,24 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                 </div>
               )}
 
-              {/* Only when configured. On paper it's pinned to the bottom
-                  of the page — the same spot every time, just above the
-                  pre-printed footer (the bottom margin) — however short or
-                  long the results are. The spacer keeps that strip clear
-                  so results never run underneath it. */}
-              {(clinic.signature_image_path || clinic.pathologist_name) && (
-                <div className="hidden print:block" style={{ height: clinic.signature_image_path ? '24mm' : '12mm' }} />
-              )}
-              {(clinic.signature_image_path || clinic.pathologist_name) && (
-                <div className="flex justify-end mt-8 print:mt-0 print:fixed print:right-0 print:bottom-[3mm]">
-                  <div className="text-center text-[0.95em]">
-                    {clinic.signature_image_path && (
-                      <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
-                    )}
-                    {clinic.pathologist_name && <div className="font-semibold">{clinic.pathologist_name}</div>}
-                  </div>
+              {/* Always shown — a printed lab report needs a place for
+                  someone to sign whether or not a pathologist name or
+                  signature image has been configured in Settings yet. On
+                  paper it's pinned to the bottom of the page — the same
+                  spot every time, just above the pre-printed footer (the
+                  bottom margin) — however short or long the results are.
+                  The spacer keeps that strip clear so results never run
+                  underneath it. */}
+              <div className="hidden print:block" style={{ height: clinic.signature_image_path ? '24mm' : '12mm' }} />
+              <div className="flex justify-end mt-8 print:mt-0 print:fixed print:right-0 print:bottom-[3mm]">
+                <div className="text-center text-[0.95em]">
+                  {clinic.signature_image_path && (
+                    <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
+                  )}
+                  <div className="border-t border-black pt-1 px-10 font-semibold">{clinic.pathologist_name || 'Pathologist'}</div>
+                  <div className="text-neutral-500">Signature</div>
                 </div>
-              )}
+              </div>
             </td>
           </tr>
         </tbody>

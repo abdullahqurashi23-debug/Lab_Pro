@@ -20,4 +20,20 @@ describe('splitBilling', () => {
     const shares = splitBilling([120], { discount: 0, paid: 121, balance: 0 });
     expect(shares[0].advance).toBe(120);
   });
+
+  it('never lets a share go negative when equal-priced tests all round up', () => {
+    // 4 tests at 1 each with a discount of 2: naive "last test takes the
+    // remainder" gives the first three tests round(0.5)=1 each (using up
+    // discount 3 > 2), leaving the last test with discount -1 and a net
+    // above its own fee.
+    const shares = splitBilling([1, 1, 1, 1], { discount: 2, paid: 0, balance: 2 });
+    for (const s of shares) {
+      expect(s.discount).toBeGreaterThanOrEqual(0);
+      expect(s.discount).toBeLessThanOrEqual(s.fee);
+      expect(s.net).toBeGreaterThanOrEqual(0);
+      expect(s.remaining).toBeGreaterThanOrEqual(0);
+    }
+    expect(shares.reduce((a, s) => a + s.discount, 0)).toBe(2);
+    expect(shares.reduce((a, s) => a + s.remaining, 0)).toBe(2);
+  });
 });

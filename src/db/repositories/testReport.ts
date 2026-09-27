@@ -56,8 +56,15 @@ export function getTestReportForPeriod(db: Database.Database, filters: TestRepor
     }),
     { fee: 0, discount: 0, advance: 0, remaining: 0 }
   );
+  // rows uses LEFT JOIN report_tests (a registered patient counts even
+  // before any test is picked); getSaleLines uses an INNER JOIN (a sale
+  // line needs an actual test to price). This is the count of reports in
+  // `rows` that have none, so the printed Sale Report can say why its
+  // total is short of the on-screen report count instead of that gap
+  // looking unexplained.
+  const reportsWithoutTests = rows.filter((r) => !r.test_codes).length;
 
-  return { from, to, rows, totals, lines, lineTotals };
+  return { from, to, rows, totals, lines, lineTotals, reportsWithoutTests };
 }
 
 // One line per test (the printed "Sale Report" layout), with each report's
@@ -83,7 +90,7 @@ function getSaleLines(db: Database.Database, from: string, to: string): SaleRepo
        FROM reports
        JOIN patients ON patients.id = reports.patient_id
        JOIN report_tests ON report_tests.report_id = reports.id
-       LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id
+       LEFT JOIN report_payment_totals p ON p.report_id = reports.id
        WHERE date(reports.created_at, 'localtime') >= date(?)
          AND date(reports.created_at, 'localtime') <= date(?)
        ORDER BY reports.created_at ASC, reports.id ASC, report_tests.id ASC`

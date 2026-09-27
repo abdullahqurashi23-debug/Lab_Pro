@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Printer, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
+import { formatCurrency as fmt } from '@/lib/currency';
 import { api } from '@/lib/api';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { RevenueGranularity, TestReportResult } from '@/lib/types';
@@ -13,10 +14,6 @@ const GRANULARITY_OPTIONS: { value: RevenueGranularity; label: string }[] = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
 ];
-
-function fmt(n: number) {
-  return `Af ${Number(n).toLocaleString()}`;
-}
 
 export default function TestReport() {
   const [granularity, setGranularity] = useState<RevenueGranularity>('daily');

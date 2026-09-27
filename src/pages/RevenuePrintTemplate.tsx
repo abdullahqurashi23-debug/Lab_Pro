@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { waitForFontsAndPaint, markPrintReady, markPrintError } from '@/lib/printReady';
+import { formatCurrency as fmt } from '@/lib/currency';
 import type { ClinicSettings, RevenueGranularity, RevenuePeriodReport, OutstandingBalanceRow } from '@/lib/types';
 
 // Rendered only inside a hidden BrowserWindow for the Revenue page's
@@ -13,9 +14,6 @@ import type { ClinicSettings, RevenueGranularity, RevenuePeriodReport, Outstandi
 // in the patient report template (see PrintTemplateContent.tsx). A
 // business PDF must render the same regardless of whatever theme happens
 // to be active in the window that triggered the export.
-function fmt(n: number) {
-  return `Af ${Number(n).toLocaleString()}`;
-}
 
 function pctLabel(pct: number | null): string {
   if (pct === null) return 'N/A';

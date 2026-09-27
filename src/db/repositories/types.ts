@@ -368,6 +368,12 @@ export interface TestReportResult {
   totals: { subtotal: number; discount: number; total: number };
   lines: SaleReportLine[];
   lineTotals: { fee: number; discount: number; advance: number; remaining: number };
+  // Reports counted in `rows` (registered, possibly billed) that have no
+  // tests yet, so they have no sale line to appear on in `lines` — a Sale
+  // Report is priced per test, and a report with no tests has nothing to
+  // price. Lets the printed page explain the gap instead of its total
+  // silently looking short compared to the on-screen report count.
+  reportsWithoutTests: number;
 }
 
 // One printed "Sale Report" line: a single test, with its report's discount,

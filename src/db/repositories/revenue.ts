@@ -252,7 +252,7 @@ export function listOutstandingBalances(db: Database.Database): OutstandingBalan
               reports.finalized_at
        FROM reports
        JOIN patients ON patients.id = reports.patient_id
-       LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id
+       LEFT JOIN report_payment_totals p ON p.report_id = reports.id
        WHERE (reports.balance - COALESCE(p.paid_total, 0)) > 0.005
        ORDER BY balance DESC`
     )

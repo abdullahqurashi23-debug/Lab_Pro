@@ -3,6 +3,7 @@ import { showErrorDialog } from '@/lib/errorDialog';
 import { Search, UserPlus, X, Plus, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { patientTitleSchema } from '@/db/validation';
 import type { AgeUnit, Doctor, Gender, Patient, Technician } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,9 +26,15 @@ export interface PatientDraft {
   address: string;
 }
 
-const PATIENT_TITLES = ['Mr.', 'Mrs.', 'Miss', 'Ms.', 'Master', 'Baby', 'Dr.'];
-// Picking a title fills in the obvious gender (still changeable before
-// registering); Baby and Dr. say nothing about gender.
+// Derived from the same schema the backend validates against (src/db/validation.ts)
+// instead of a second hand-copied list, so the dropdown and the backend's
+// accepted values can never drift apart.
+const PATIENT_TITLES = patientTitleSchema.options.filter((t) => t !== '');
+// Picking a title fills in gender ONLY while it hasn't been set yet — once
+// staff have explicitly chosen a gender, a title picked afterward (for
+// print formatting, or a correction) must never silently flip it right
+// before both fields lock forever on save. Baby and Dr. say nothing about
+// gender either way.
 const TITLE_GENDER: Record<string, Gender> = { 'Mr.': 'Male', Master: 'Male', 'Mrs.': 'Female', Miss: 'Female', 'Ms.': 'Female' };
 
 export function blankPatientDraft(): PatientDraft {
@@ -66,9 +73,6 @@ interface PatientPanelProps {
   // True once this report has been saved: its patient can no longer be
   // swapped for another.
   reportSaved?: boolean;
-  // Saves the patient + report immediately, locking the patient.
-  onRegister?: () => void;
-  registering?: boolean;
 }
 
 export default function PatientPanel({
@@ -80,17 +84,11 @@ export default function PatientPanel({
   onPerformedByChange,
   disabled,
   reportSaved,
-  onRegister,
-  registering,
 }: PatientPanelProps) {
   // A patient that already exists in the database (picked from search, or
   // registered by this report's first save) is locked: its details are
   // read-only here and can't be changed anywhere (see migration 016).
   const patientLocked = disabled || !!patient.id;
-  // Registering locks these forever, so they must be filled in first
-  // (age and gender also drive the reference ranges).
-  // An already-saved patient is used as stored, gaps and all.
-  const detailsComplete = !!patient.id || (patient.full_name.trim() !== '' && patient.age.trim() !== '' && !!patient.gender);
   // Only two real modes now: searching for/starting a patient, or editing
   // one (whether it's an existing patient pulled up from search/a draft, or
   // a brand-new one being typed in for the first time) — both show the
@@ -299,7 +297,7 @@ export default function PatientPanel({
                   value={patient.title || '__none__'}
                   onValueChange={(v) => {
                     const title = v === '__none__' ? '' : v;
-                    onPatientChange({ ...patient, title, gender: TITLE_GENDER[title] ?? patient.gender });
+                    onPatientChange({ ...patient, title, gender: patient.gender ?? TITLE_GENDER[title] ?? patient.gender });
                   }}
                   disabled={patientLocked}
                 >
@@ -369,21 +367,12 @@ export default function PatientPanel({
                 <Input value={patient.address} onChange={(e) => onPatientChange({ ...patient, address: e.target.value })} disabled={patientLocked} />
               </div>
             </div>
-            {!reportSaved && onRegister && (
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/40 px-4 py-3">
-                <p className="text-sm text-muted-foreground">
-                  {patient.id
-                    ? 'Start a report for this patient. It is saved immediately and cannot be deleted.'
-                    : 'Check the details, then register. Once registered, the patient is saved and locked — it cannot be changed or deleted.'}
-                </p>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <Button onClick={onRegister} disabled={disabled || registering || !detailsComplete}>
-                    <UserPlus className="h-4 w-4" />
-                    {patient.id ? 'Start Report' : 'Register Patient'}
-                  </Button>
-                  {!detailsComplete && <span className="text-xs text-destructive">Name, age and gender are required</span>}
-                </div>
-              </div>
+            {!reportSaved && (
+              <p className="text-xs text-muted-foreground">
+                {patient.id
+                  ? 'Saving this report is immediate and cannot be deleted afterward.'
+                  : 'Add tests and click Save Draft below when ready — the patient is then saved and locked and cannot be changed or deleted.'}
+              </p>
             )}
           </>
         )}

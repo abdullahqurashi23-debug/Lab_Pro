@@ -57,7 +57,7 @@ export function getDashboardStats(db: Database.Database): DashboardStats {
         .prepare(
           `SELECT COALESCE(SUM(MAX(reports.balance - COALESCE(p.paid_total, 0), 0)), 0) as total
            FROM reports
-           LEFT JOIN (SELECT report_id, SUM(amount) as paid_total FROM payments GROUP BY report_id) p ON p.report_id = reports.id`
+           LEFT JOIN report_payment_totals p ON p.report_id = reports.id`
         )
         .get() as { total: number }
     ).total || 0;

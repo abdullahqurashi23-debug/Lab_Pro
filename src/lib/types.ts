@@ -386,6 +386,7 @@ export interface TestReportResult {
   totals: { subtotal: number; discount: number; total: number };
   lines: SaleReportLine[];
   lineTotals: { fee: number; discount: number; advance: number; remaining: number };
+  reportsWithoutTests: number;
 }
 
 // One printed "Sale Report" line: a single test, with its report's discount,

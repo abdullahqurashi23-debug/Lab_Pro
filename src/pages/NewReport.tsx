@@ -317,18 +317,15 @@ export default function NewReport() {
     ({ currentLocation, nextLocation }) => dirtyRef.current && currentLocation.pathname !== nextLocation.pathname
   );
 
+  // The first save creates the patient and this report right away, so
+  // from that moment the patient is locked (no edits, no swapping, no
+  // delete) and shows up in the daily/weekly/monthly reports — there's no
+  // separate "register" step before this; filling in the form and saving
+  // (here, or via Preview/Finalize below) is the whole flow.
   const handleSaveDraft = async () => {
     const wasRegistered = reportId != null;
     const result = await save(false);
     if (result) toast.success(wasRegistered ? 'Draft saved.' : 'Patient registered and locked.');
-  };
-
-  // "Register Patient": the first save creates the patient and this report
-  // right away, so from this moment the patient is locked (no edits, no
-  // swapping, no delete) and shows up in the daily/weekly/monthly reports.
-  const handleRegisterPatient = async () => {
-    const result = await save(false);
-    if (result) toast.success('Patient registered and locked. Now add tests.');
   };
 
   const handlePreview = async () => {
@@ -427,7 +424,7 @@ export default function NewReport() {
             {isReadOnly
               ? 'This report is finalized and locked.'
               : reportId == null
-                ? 'Enter the patient and click Register Patient. The patient is then saved and locked — it cannot be changed or deleted.'
+                ? 'Enter the patient, add tests, then Save Draft. The patient is then saved and locked — it cannot be changed or deleted.'
                 : 'Patient is registered and locked. Tests, results and billing save automatically until you finalize.'}
           </p>
         </div>
@@ -455,8 +452,6 @@ export default function NewReport() {
         onPerformedByChange={setPerformedByDirty}
         disabled={isReadOnly}
         reportSaved={reportId != null}
-        onRegister={handleRegisterPatient}
-        registering={saving}
       />
 
       <div className="space-y-3">
@@ -533,11 +528,21 @@ export default function NewReport() {
 
       {!isReadOnly && (
         <div className="sticky bottom-0 -mx-8 bg-background border-t border-border px-8 py-4 flex items-center justify-end gap-3 no-print">
-          <Button variant="outline" onClick={handleSaveDraft} disabled={!canSave || saving}>
+          <Button
+            variant="outline"
+            onClick={handleSaveDraft}
+            disabled={!canSave || saving}
+            title={!canSave && reportId == null ? 'Name, age and gender are required' : undefined}
+          >
             <Save className="h-4 w-4" />
             Save Draft
           </Button>
-          <Button variant="outline" onClick={handlePreview} disabled={!canSave || !hasTests || saving}>
+          <Button
+            variant="outline"
+            onClick={handlePreview}
+            disabled={!canSave || !hasTests || saving}
+            title={!hasTests ? 'Add at least one test first' : undefined}
+          >
             <Eye className="h-4 w-4" />
             Preview
           </Button>

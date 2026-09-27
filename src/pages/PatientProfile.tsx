@@ -4,6 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { ArrowLeft } from 'lucide-react';
 import { showErrorDialog } from '@/lib/errorDialog';
+import { formatCurrency as fmt } from '@/lib/currency';
 import { api } from '@/lib/api';
 import { useLiveRefresh } from '@/lib/useLiveRefresh';
 import type { Patient, ReportListRow, PatientTrendParameter, PatientParameterPoint } from '@/lib/types';
@@ -152,8 +153,6 @@ export default function PatientProfile() {
   const openReport = (r: ReportListRow) => {
     navigate(r.status === 'FINALIZED' ? `/reports/${r.id}/print` : `/new-report/${r.id}`);
   };
-
-  const fmt = (n: number) => `Af ${n.toLocaleString()}`;
 
   if (loading || !patient) {
     return <div className="p-8 text-muted-foreground">Loading patient…</div>;

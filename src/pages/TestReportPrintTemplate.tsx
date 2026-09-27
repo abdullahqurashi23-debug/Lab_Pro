@@ -138,6 +138,12 @@ export default function TestReportPrintTemplate() {
           </tbody>
         </table>
       )}
+      {report.reportsWithoutTests > 0 && (
+        <p className="mt-2 text-[0.85em] text-neutral-500">
+          {report.reportsWithoutTests} registered report{report.reportsWithoutTests === 1 ? '' : 's'} with no tests added yet{' '}
+          {report.reportsWithoutTests === 1 ? 'is' : 'are'} not shown above — nothing to price until a test is picked.
+        </p>
+      )}
     </div>
   );
 }

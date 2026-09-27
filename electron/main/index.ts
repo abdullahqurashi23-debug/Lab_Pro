@@ -283,8 +283,12 @@ function audit(action: string, entity: string, entityId: number | null, details?
 // Report, Revenue, Patients…) re-load straight away instead of showing
 // stale numbers until the user navigates away and back.
 // print:report is included because printing a draft finalizes it.
+// backup:restore is matched but moot in practice — it relaunches the whole
+// app (see the handler below), so there's never a surviving window left to
+// receive the broadcast; kept in the list anyway so the pattern stays
+// correct if that handler is ever changed to not relaunch.
 const MUTATING_CHANNEL =
-  /:(create|update\w*|delete|activate|deactivate|reorder|finalize|retryArchive|regenerate\w*|record|set|import\w*|resetPassword)$|^print:report$/;
+  /:(create|update\w*|delete|activate|deactivate|reorder|finalize|retryArchive|regenerate\w*|record|set|import\w*|reset\w*|restore)$|^print:report$/;
 
 function broadcastDataChanged(channel: string) {
   for (const win of BrowserWindow.getAllWindows()) {
