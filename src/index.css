@@ -82,6 +82,19 @@
     @apply border-border;
   }
 
+  /* Every Tailwind size utility (text-sm, p-3, w-64, gap-2, ...) is defined
+     in rem, so this one line scales text AND spacing/padding/sizing
+     together across the entire app — a deliberate, denser "professional
+     software" scale instead of the browser's 16px document default, which
+     read as oversized and wasted screen space on smaller/lower-resolution
+     Windows machines. Per-user fine-tuning on top of this still works via
+     Settings > Display (Ctrl/Cmd +/-/0), which zooms the whole page,
+     this included. Print output is unaffected: the print template sets its
+     own font size in points as an inline style, not from this rem scale. */
+  html {
+    font-size: 14px;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }

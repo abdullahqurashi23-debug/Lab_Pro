@@ -144,6 +144,12 @@ contextBridge.exposeInMainWorld('api', {
     get: (key: string) => ipcRenderer.invoke('appSettings:get', key),
     set: (key: string, value: string) => ipcRenderer.invoke('appSettings:set', key, value),
   },
+  app: {
+    getZoom: () => ipcRenderer.invoke('app:getZoom'),
+    zoomIn: () => ipcRenderer.invoke('app:zoomIn'),
+    zoomOut: () => ipcRenderer.invoke('app:zoomOut'),
+    resetZoom: () => ipcRenderer.invoke('app:resetZoom'),
+  },
   print: {
     report: (reportId: number, mode: 'paper' | 'pdf') => ipcRenderer.invoke('print:report', reportId, mode),
     savePdf: (reportId: number) => ipcRenderer.invoke('print:savePdf', reportId),

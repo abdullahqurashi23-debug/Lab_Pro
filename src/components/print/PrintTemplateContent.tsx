@@ -91,9 +91,10 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
   // still null — fall back to created_at so a date always shows.
   const reported = localDateTime(report.finalized_at || report.created_at);
   const registered = localDateTime(report.created_at);
-  // The technician entered on the report; older reports fall back to
-  // whoever finalized it in the software.
-  const performedBy = report.performed_by || report.finalized_by_name || '';
+  // Only ever the technician explicitly entered on the report — never a
+  // fallback to whoever happened to finalize it, which would print a name
+  // nobody actually chose as having performed the tests.
+  const performedBy = report.performed_by || '';
   const qrText = [
     clinic.clinic_name,
     `Report No: ${report.report_no}`,

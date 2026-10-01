@@ -116,8 +116,12 @@ describe('test report — daily / weekly / monthly register', () => {
   });
 
   it('monthly includes everything so far this calendar month', () => {
+    // A fixed "2 days ago" would land in the PREVIOUS month whenever this
+    // runs on the 1st or 2nd of a month — clamp to how far into the current
+    // month "today" actually is, so the test is never date-dependent.
+    const earlierThisMonth = Math.min(2, new Date().getDate() - 1);
     finalizedReportOnDay(0, { price: 150 });
-    finalizedReportOnDay(2, { price: 250 });
+    finalizedReportOnDay(earlierThisMonth, { price: 250 });
 
     const result = getTestReportForPeriod(ctx.db, { granularity: 'monthly' });
     expect(result.rows.length).toBeGreaterThanOrEqual(2);

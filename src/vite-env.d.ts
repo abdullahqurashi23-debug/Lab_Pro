@@ -286,6 +286,12 @@ export interface LabProApi {
     get: (key: string) => Promise<string | null>;
     set: (key: string, value: string) => Promise<void>;
   };
+  app: {
+    getZoom: () => Promise<number>;
+    zoomIn: () => Promise<number>;
+    zoomOut: () => Promise<number>;
+    resetZoom: () => Promise<number>;
+  };
   backup: {
     now: () => Promise<BackupFileInfo>;
     list: () => Promise<BackupFileInfo[]>;

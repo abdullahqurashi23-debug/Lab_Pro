@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, screen } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -98,15 +98,85 @@ function db() {
 const APP_ROOT = path.join(__dirname, '..', '..', '..');
 const ICON_PATH = path.join(APP_ROOT, 'build', 'icon.png');
 
+// ---------------------------------------------------------------
+// Window size/position and UI zoom — installed on machines with very
+// different screen sizes, so a single fixed window size either feels
+// cramped on a small/old laptop or lost in the middle of a large monitor.
+// Read/written directly through settingsRepo (not the appSettings:get/set
+// IPC channel, which requires a signed-in user) because window geometry
+// must be restored before anyone has logged in.
+// ---------------------------------------------------------------
+const WINDOW_BOUNDS_KEY = 'window_bounds';
+const WINDOW_MAXIMIZED_KEY = 'window_maximized';
+const ZOOM_FACTOR_KEY = 'ui_zoom_factor';
+const DEFAULT_ZOOM = 1;
+// Matches Chrome/Electron's own default zoom step list.
+const ZOOM_STEPS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
+interface SavedBounds {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
+function loadSavedBounds(): SavedBounds | null {
+  try {
+    const raw = settingsRepo.getSetting(db(), WINDOW_BOUNDS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if ([parsed.width, parsed.height, parsed.x, parsed.y].every((n) => typeof n === 'number' && Number.isFinite(n))) {
+      return parsed;
+    }
+  } catch {
+    // Ignore a corrupt/old value and fall back to defaults below.
+  }
+  return null;
+}
+
+// A saved position can land off-screen after unplugging a second monitor
+// or switching to a machine with a smaller display — better to re-center
+// with the default size than open a window the user can't see or reach.
+function boundsAreOnScreen(bounds: SavedBounds): boolean {
+  return screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return bounds.x < a.x + a.width && bounds.x + bounds.width > a.x && bounds.y < a.y + a.height && bounds.y + bounds.height > a.y;
+  });
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const isMaximized = mainWindow.isMaximized();
+  settingsRepo.setSetting(db(), WINDOW_MAXIMIZED_KEY, isMaximized ? '1' : '0');
+  // getNormalBounds() (not getBounds()) while maximized, so un-maximizing
+  // later restores the size from before it was maximized, not the full
+  // screen size.
+  const bounds = isMaximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+  settingsRepo.setSetting(db(), WINDOW_BOUNDS_KEY, JSON.stringify(bounds));
+}
+
 function createWindow() {
+  const savedBounds = loadSavedBounds();
+  const useSavedBounds = !!savedBounds && boundsAreOnScreen(savedBounds);
+  const savedMaximized = settingsRepo.getSetting(db(), WINDOW_MAXIMIZED_KEY);
+  // No saved value at all means this is the very first launch — default to
+  // filling the screen instead of a fixed 1280x800 that can feel cramped on
+  // a small/budget laptop or lost in the middle of a large monitor. Once
+  // the user resizes or un-maximizes, their choice is remembered from then
+  // on (saved below).
+  const shouldMaximize = savedMaximized === null ? true : savedMaximized === '1';
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: useSavedBounds ? savedBounds!.width : 1280,
+    height: useSavedBounds ? savedBounds!.height : 800,
+    x: useSavedBounds ? savedBounds!.x : undefined,
+    y: useSavedBounds ? savedBounds!.y : undefined,
     minWidth: 1024,
     minHeight: 700,
     title: 'LabCore',
     icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     backgroundColor: '#f8fafc',
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
@@ -114,6 +184,47 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  if (shouldMaximize) mainWindow.maximize();
+  mainWindow.show();
+
+  const savedZoomRaw = settingsRepo.getSetting(db(), ZOOM_FACTOR_KEY);
+  const savedZoom = savedZoomRaw ? Number(savedZoomRaw) : DEFAULT_ZOOM;
+  mainWindow.webContents.setZoomFactor(Number.isFinite(savedZoom) && savedZoom > 0 ? savedZoom : DEFAULT_ZOOM);
+
+  // Ctrl/Cmd +, -, 0 to zoom — removing Electron's default menu below (for
+  // the Developer Access shortcut fix) also silently removed its built-in
+  // zoom accelerators, which is how people on a cramped or unusually large
+  // screen would otherwise adjust text size themselves. Re-implemented
+  // directly against webContents so it keeps working on every screen,
+  // including the login/setup screens, and persisted so a lab that zooms
+  // out once doesn't have to redo it every launch.
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown' || (!input.control && !input.meta)) return;
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) return;
+    const current = win.webContents.getZoomFactor();
+    let next: number | null = null;
+    if (input.key === '=' || input.key === '+') {
+      next = ZOOM_STEPS.find((z) => z > current + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1];
+    } else if (input.key === '-') {
+      next = [...ZOOM_STEPS].reverse().find((z) => z < current - 0.001) ?? ZOOM_STEPS[0];
+    } else if (input.key === '0') {
+      next = DEFAULT_ZOOM;
+    }
+    if (next === null) return;
+    win.webContents.setZoomFactor(next);
+    settingsRepo.setSetting(db(), ZOOM_FACTOR_KEY, String(next));
+  });
+
+  let saveStateTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleSaveState = () => {
+    if (saveStateTimer) clearTimeout(saveStateTimer);
+    saveStateTimer = setTimeout(saveWindowState, 400);
+  };
+  mainWindow.on('resize', scheduleSaveState);
+  mainWindow.on('move', scheduleSaveState);
+  mainWindow.on('close', saveWindowState);
 
   // Renderer console output (including uncaught errors) is otherwise only
   // visible in DevTools — forwarding warnings/errors to the main process's
@@ -1075,6 +1186,30 @@ handle('appSettings:get', (_e, key: string) => {
 handle('appSettings:set', (_e, key: string, value: string) => {
   requireAdmin();
   settingsRepo.setSetting(db(), String(key), String(value));
+});
+
+// Not auth-gated like appSettings above: zoom is a per-machine display
+// preference (same reasoning as window size), not lab configuration, and
+// every signed-in role should be able to adjust it for their own eyes.
+handle('app:getZoom', () => {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getZoomFactor() : DEFAULT_ZOOM;
+});
+function setZoom(factor: number): number {
+  const clamped = ZOOM_STEPS.reduce((closest, z) => (Math.abs(z - factor) < Math.abs(closest - factor) ? z : closest), DEFAULT_ZOOM);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setZoomFactor(clamped);
+  settingsRepo.setSetting(db(), ZOOM_FACTOR_KEY, String(clamped));
+  return clamped;
+}
+handle('app:zoomIn', () => {
+  const current = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getZoomFactor() : DEFAULT_ZOOM;
+  return setZoom(ZOOM_STEPS.find((z) => z > current + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]);
+});
+handle('app:zoomOut', () => {
+  const current = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.getZoomFactor() : DEFAULT_ZOOM;
+  return setZoom([...ZOOM_STEPS].reverse().find((z) => z < current - 0.001) ?? ZOOM_STEPS[0]);
+});
+handle('app:resetZoom', () => {
+  return setZoom(DEFAULT_ZOOM);
 });
 
 // Used for the small square logo, and the two full-width header/footer

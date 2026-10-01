@@ -2,7 +2,7 @@ import { localDate, localDateTime } from '@/lib/localTime';
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { showErrorDialog } from '@/lib/errorDialog';
-import { Plus } from 'lucide-react';
+import { Plus, Minus, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toFileUrl } from '@/lib/fileUrl';
 import { useAuth } from '@/lib/auth-context';
@@ -492,6 +492,46 @@ function IdleTimeoutSection() {
       <Button onClick={save} disabled={saving}>
         {saving ? 'Saving…' : 'Save'}
       </Button>
+    </div>
+  );
+}
+
+// Lets everyone shrink or grow the whole interface for their own screen and
+// eyesight — installed on everything from a small old laptop to a large
+// monitor, with no single fixed size that fits all of them. Ctrl/Cmd +/-/0
+// do the same thing; this is the discoverable, mouse-friendly version of
+// the same setting, and both read/write the same saved value.
+function DisplaySection() {
+  const [zoom, setZoom] = useState(1);
+
+  const refresh = () => api.app.getZoom().then(setZoom).catch(() => {});
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const zoomIn = () => api.app.zoomIn().then(setZoom).catch(() => {});
+  const zoomOut = () => api.app.zoomOut().then(setZoom).catch(() => {});
+  const reset = () => api.app.resetZoom().then(setZoom).catch(() => {});
+
+  return (
+    <div className="space-y-2">
+      <Label>Interface size</Label>
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" size="icon" onClick={zoomOut} title="Make text smaller">
+          <Minus className="h-4 w-4" />
+        </Button>
+        <span className="w-14 text-center text-sm font-medium tabular-nums">{Math.round(zoom * 100)}%</span>
+        <Button type="button" variant="outline" size="icon" onClick={zoomIn} title="Make text bigger">
+          <Plus className="h-4 w-4" />
+        </Button>
+        <Button type="button" variant="outline" onClick={reset} title="Reset to default size">
+          <RotateCcw className="h-4 w-4" />
+          Reset
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Also works with Ctrl and +, Ctrl and -, or Ctrl and 0 on the keyboard. Saved automatically for this computer.
+      </p>
     </div>
   );
 }
@@ -1163,6 +1203,9 @@ export default function Settings() {
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">Clinic details, doctors, technicians, and account security.</p>
       </div>
+      <SectionCard title="Display" description="Adjust text and interface size for this computer's screen.">
+        <DisplaySection />
+      </SectionCard>
       {isAdmin && (
         <SectionCard title="Clinic Information">
           <ClinicInfoSection />
