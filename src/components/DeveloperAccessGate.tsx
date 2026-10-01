@@ -13,7 +13,13 @@ export default function DeveloperAccessGate({ children }: { children: ReactNode 
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.altKey && e.key.toLowerCase() === 'd') {
+      // e.code ('KeyD'), not e.key — holding the real Option key on a Mac
+      // composes Option+D into a special character ("∂"), so e.key never
+      // actually equals 'd' once Alt/Option is genuinely held down on a
+      // physical keyboard. e.code reports the physical key position
+      // instead, unaffected by whatever character modifiers compose it
+      // into, which is what a modifier-key shortcut actually needs.
+      if (e.ctrlKey && e.shiftKey && e.altKey && e.code === 'KeyD') {
         e.preventDefault();
         setDialogOpen(true);
       }

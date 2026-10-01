@@ -185,7 +185,7 @@ export interface LabProApi {
     completeLabSetup: (input: LabSetupInput) => Promise<LoginResult>;
     systemInfo: () => Promise<DevSystemInfo>;
     listAdmins: () => Promise<PublicUser[]>;
-    resetLabAdminPassword: (userId: number, newPassword: string) => Promise<OkResult>;
+    resetLabAdminPassword: (userId: number, newPassword: string) => Promise<{ ok: boolean; reactivated?: boolean }>;
     auditLog: (filters?: AuditLogFilters) => Promise<AuditLogPageResult>;
     openLogsFolder: () => Promise<void>;
     dbIntegrityCheck: () => Promise<IntegrityCheckResult>;

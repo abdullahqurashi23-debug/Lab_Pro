@@ -61,8 +61,12 @@ export default function DeveloperPanel({ onClose }: { onClose: () => void }) {
     }
     setResettingPassword(true);
     try {
-      await api.dev.resetLabAdminPassword(Number(selectedAdminId), newPassword);
-      toast.success('Password reset. They must change it on next login.');
+      const result = await api.dev.resetLabAdminPassword(Number(selectedAdminId), newPassword);
+      toast.success(
+        result.reactivated
+          ? 'Password reset and account reactivated — it was switched off. They must change the password on next login.'
+          : 'Password reset. They must change it on next login.'
+      );
       setNewPassword('');
     } catch (err) {
       showErrorDialog(err instanceof Error ? err.message : 'Failed to reset password.');
@@ -149,7 +153,7 @@ export default function DeveloperPanel({ onClose }: { onClose: () => void }) {
                   <SelectContent>
                     {admins.map((a) => (
                       <SelectItem key={a.id} value={String(a.id)}>
-                        {a.full_name} ({a.username})
+                        {a.full_name} ({a.username}){!a.is_active ? ' — inactive' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -163,7 +167,10 @@ export default function DeveloperPanel({ onClose }: { onClose: () => void }) {
                 {resettingPassword ? 'Resetting…' : 'Reset Password'}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">They'll be required to change it on next login.</p>
+            <p className="text-xs text-muted-foreground">
+              They'll be required to change it on next login. If the account shows "inactive", resetting also
+              reactivates it.
+            </p>
           </CardContent>
         </Card>
 

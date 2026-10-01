@@ -603,9 +603,21 @@ handle('dev:resetLabAdminPassword', (_e, userId: number, newPassword: string) =>
   requireDevUnlocked();
   const parsed = strongPasswordSchema.parse(newPassword);
   const id = idSchema.parse(userId);
+  const target = usersRepo.getUserById(db(), id);
+  if (!target) throw new Error('That account no longer exists.');
   usersRepo.setPassword(db(), id, bcrypt.hashSync(parsed, 10), true);
+  // This panel exists to get a locked-out admin back in — a password reset
+  // that leaves the account deactivated (e.g. an old account from before a
+  // Reset Setup, or one an admin switched off by mistake) would silently
+  // accomplish nothing: login fails the same generic "Invalid username or
+  // password" whether the password or the active flag is wrong, so without
+  // this a developer has no way to tell the reset "worked" but the account
+  // still can't sign in.
+  if (!target.is_active) {
+    usersRepo.updateUser(db(), id, { full_name: target.full_name, role: target.role, is_active: 1 });
+  }
   auditRepo.recordAudit(db(), { user_id: null, action: 'DEV_RESET_PASSWORD', entity: 'user', entity_id: id });
-  return { ok: true };
+  return { ok: true, reactivated: !target.is_active };
 });
 
 handle('dev:auditLog', (_e, filters) => {

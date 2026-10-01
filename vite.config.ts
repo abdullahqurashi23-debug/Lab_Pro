@@ -16,4 +16,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
+  server: {
+    port: 5173,
+    // Electron (electron/main/index.ts, electron/print.ts) hardcodes
+    // http://localhost:5173 for dev mode — without this, Vite silently
+    // falls back to 5174/5175/... when 5173 is already taken (usually a
+    // leftover `npm run dev` process that was never fully stopped), and
+    // Electron keeps loading the old/wrong port with no error, showing a
+    // blank window with no indication why. Failing loudly here is far
+    // easier to diagnose than a silently blank app.
+    strictPort: true,
+  },
 });
