@@ -48,6 +48,20 @@ jobs:
         if: matrix.edition == 'standard'
         run: npm run dist
 
+      # better-sqlite3@9.6.0 (pinned for Electron 22 compatibility, see above)
+      # doesn't always have a prebuilt binary available for that exact old
+      # Electron version, which makes npm fall back to compiling it from
+      # source with node-gyp — and node-gyp needs a real MSVC toolchain to
+      # do that. windows-latest runners have one, but node-gyp's own
+      # auto-detection of it has intermittently failed in practice ("Could
+      # not find any Visual Studio installation"), failing this whole job
+      # on a retry-and-it-works CI flake. This Action sets up the same
+      # toolchain through its environment variables directly, which
+      # node-gyp picks up without needing to auto-detect anything.
+      - name: Set up MSVC build tools (for compiling better-sqlite3 from source)
+        if: matrix.edition == 'win7'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Build and package (Windows 7 edition)
         if: matrix.edition == 'win7'
         shell: bash
