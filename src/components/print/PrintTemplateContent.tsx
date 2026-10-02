@@ -9,7 +9,7 @@ import type { PrintLayout } from '@/db/printLayout';
 
 // Laid out to match the lab's existing pre-printed-letterhead reports:
 // a three-column patient / sample / dates block, then each test as a
-// centred heading over an Investigation / Result / Reference Value / Unit
+// centred heading over a Test Name / Result / Reference Value / Unit
 // table. Everything is solid black on white, with no grey text, colour or
 // tinted fills: mono laser printers render grey and colour as a dotted
 // halftone, which made parts of the printed report look fuzzy.
@@ -50,12 +50,17 @@ function QrCode({ text }: { text: string }) {
       const qr = qrcode(0, 'M');
       qr.addData(text, 'Byte');
       qr.make();
-      return qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+      // margin: 0 left no quiet zone at all — every real QR code has a
+      // blank border around the pattern (it's part of the spec, not just
+      // decoration: scanners use it to find the code's edges), and without
+      // it the modules sat flush against the bounding box, reading as a
+      // generic pixel grid rather than a recognizable QR code.
+      return qr.createSvgTag({ cellSize: 2, margin: 2, scalable: true });
     } catch {
       return ''; // too much text for a QR code — leave it out, don't break the print
     }
   }, [text]);
-  return <div className="w-[15mm] h-[15mm] shrink-0 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: svg }} />;
+  return <div className="w-[13mm] h-[13mm] shrink-0 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 interface PrintTemplateContentProps {
@@ -130,8 +135,7 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                   </div>
                 </div>
                 <div className="px-3" style={{ borderLeft: RULE }}>
-                  <div className="font-bold mb-1">Sample Collected At:</div>
-                  <div>{clinic.clinic_name}</div>
+                  <div className="font-bold mb-1">{clinic.clinic_name}</div>
                   {clinic.address && <div className="whitespace-pre-line">{clinic.address}</div>}
                   <div className="mt-2">
                     Ref. By: <span className="font-bold">{report.doctor_name || 'Self'}</span>
@@ -171,7 +175,7 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                     </colgroup>
                     <thead>
                       <tr className="text-left">
-                        <th className="py-1 pr-4 font-bold text-[1.05em]">Investigation</th>
+                        <th className="py-1 pr-4 font-bold text-[1.05em]">Test Name</th>
                         <th className="py-1 pr-2 font-bold text-[1.05em]">Result</th>
                         <th className="py-1 pr-2 font-bold text-[1.05em]">Reference Value</th>
                         <th className="py-1 font-bold text-[1.05em]">Unit</th>
@@ -214,7 +218,10 @@ export default function PrintTemplateContent({ report, clinic, layout, mode, sho
                   {clinic.signature_image_path && (
                     <img src={toFileUrl(clinic.signature_image_path)} alt="" className="h-12 mx-auto object-contain mb-1" />
                   )}
-                  <div className="border-t border-black pt-1 px-10 font-semibold">{clinic.pathologist_name || 'Pathologist'}</div>
+                  {/* Blank when no pathologist name is configured — a line
+                      to sign on, not a placeholder word standing in for a
+                      name nobody has entered. */}
+                  <div className="border-t border-black pt-1 px-10 font-semibold min-w-[40mm]">{clinic.pathologist_name}</div>
                   <div className="text-neutral-500">Signature</div>
                 </div>
               </div>
